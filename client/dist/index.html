@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TeraBox 链接替换管理</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-secondary: #111827;
+      --bg-card: #1a2035;
+      --bg-card-hover: #1f2847;
+      --border: #2a3555;
+      --text-primary: #e5e7eb;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --green: #10b981;
+      --green-bg: rgba(16,185,129,0.12);
+      --yellow: #f59e0b;
+      --yellow-bg: rgba(245,158,11,0.12);
+      --red: #ef4444;
+      --red-bg: rgba(239,68,68,0.12);
+      --blue: #3b82f6;
+      --blue-bg: rgba(59,130,246,0.12);
+      --purple: #8b5cf6;
+      --purple-bg: rgba(139,92,246,0.12);
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.3);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+    }
+
+    .app-header {
+      background: linear-gradient(135deg, #1a1f3a 0%, #0f1629 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+    .app-header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #818cf8, #6366f1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .app-header .version {
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--bg-card);
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+    /* Stats Cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      transition: all 0.3s ease;
+    }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .stat-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .stat-card .value { font-size: 32px; font-weight: 700; }
+    .stat-card.total .value { color: var(--accent); }
+    .stat-card.success .value { color: var(--green); }
+    .stat-card.pending .value { color: var(--yellow); }
+    .stat-card.error .value { color: var(--red); }
+
+    /* Action Bar */
+    .action-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
+    .btn-secondary { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
+    .btn-secondary:hover:not(:disabled) { background: var(--bg-card-hover); }
+    .btn-success { background: var(--green); color: #fff; }
+    .btn-success:hover:not(:disabled) { opacity: 0.9; }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-danger:hover:not(:disabled) { opacity: 0.9; }
+    .btn-warning { background: var(--yellow); color: #000; }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      width: 500px; max-width: 90%;
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+    .modal-header { margin-bottom: 20px; font-size: 18px; font-weight: 600; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+    .form-group input, .form-group select {
+      width: 100%; background: var(--bg-secondary); border: 1px solid var(--border);
+      color: var(--text-primary); padding: 10px; border-radius: 6px; font-family: inherit;
+    }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+
+    .running-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--yellow);
+      font-size: 14px;
+    }
+    .running-indicator .dot {
+      width: 8px; height: 8px;
+      background: var(--yellow);
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* Table */
+    .table-wrapper {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .table-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .table-toolbar input {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      width: 260px;
+      font-family: inherit;
+    }
+    .table-toolbar input::placeholder { color: var(--text-muted); }
+    .filter-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+    .filter-btn {
+      padding: 5px 12px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-secondary);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+    .records-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .records-table th {
+      background: var(--bg-secondary);
+      padding: 12px 16px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-secondary);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      position: sticky;
+      top: 0;
+    }
+    .records-table td {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .records-table tr:hover td { background: rgba(99,102,241,0.04); }
+
+    .status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .status-已采集 { background: var(--blue-bg); color: var(--blue); }
+    .status-已转存 { background: var(--purple-bg); color: var(--purple); }
+    .status-已分享 { background: var(--yellow-bg); color: var(--yellow); }
+    .status-已替换 { background: var(--green-bg); color: var(--green); }
+    .status-待处理 { background: rgba(107,114,128,0.15); color: var(--text-muted); }
+    .status-转存失败, .status-分享失败, .status-替换失败 { background: var(--red-bg); color: var(--red); }
+
+    .link-cell { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .link-cell a { color: var(--accent); text-decoration: none; }
+    .link-cell a:hover { text-decoration: underline; }
+
+    .title-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* Log Panel */
+    .log-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-top: 24px;
+    }
+    .log-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .log-header h3 { font-size: 15px; font-weight: 600; }
+    .log-body {
+      max-height: 300px;
+      overflow-y: auto;
+      padding: 12px 20px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      line-height: 1.8;
+    }
+    .log-line { color: var(--text-secondary); }
+    .log-line.error { color: var(--red); }
+    .log-line.success { color: var(--green); }
+    .log-line.warn { color: var(--yellow); }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      padding: 16px;
+    }
+    .pagination .btn { padding: 6px 14px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <h1>🔗 TeraBox 链接替换管理</h1>
+      <span class="version">v1.3.0</span>
+    </header>
+
+    <div class="container">
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-card total">
+          <div class="label">总记录</div>
+          <div class="value">{{ stats.total || 0 }}</div>
+        </div>
+        <div class="stat-card" style="--accent-color: var(--blue)">
+          <div class="label">已采集</div>
+          <div class="value" style="color:var(--blue)">{{ stats['已采集'] || 0 }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">已转存</div>
+          <div class="value" style="color:var(--purple)">{{ stats['已转存'] || 0 }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">已分享</div>
+          <div class="value" style="color:var(--yellow)">{{ stats['已分享'] || 0 }}</div>
+        </div>
+        <div class="stat-card success">
+          <div class="label">已替换</div>
+          <div class="value">{{ stats['已替换'] || 0 }}</div>
+        </div>
+        <div class="stat-card error">
+          <div class="label">失败</div>
+          <div class="value">{{ failCount }}</div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="action-bar">
+        <button class="btn btn-primary" @click="runTask('crawl')" :disabled="running">📥 采集链接</button>
+        <button class="btn btn-secondary" @click="runTask('transfer')" :disabled="running">📦 批量转存</button>
+        <button class="btn btn-secondary" @click="runTask('share')" :disabled="running">🔗 创建分享</button>
+        <button class="btn btn-success" @click="runTask('replace')" :disabled="running">✅ 替换链接</button>
+        <button class="btn btn-warning" @click="runTask('run')" :disabled="running">🚀 全流程执行</button>
+        <button class="btn btn-secondary" @click="importOld" :disabled="running">📂 导入旧数据</button>
+
+        <button class="btn btn-secondary" @click="exportCsv">📄 导出CSV</button>
+        <div v-if="running" class="running-indicator">
+          <span class="dot"></span>
+          {{ runningTask }} 执行中...
+          <button class="btn btn-danger" style="padding:4px 12px; margin-left:12px; font-size:12px" @click="stopTask">🛑 停止任务</button>
+        </div>
+      </div>
+
+      <div v-if="selected.length > 0" class="action-bar" style="background: var(--bg-card); padding: 12px; border-radius: 8px; border: 1px solid var(--accent)">
+        <span style="font-size: 14px; font-weight: 600; color: var(--accent)">已选择 {{ selected.length }} 项:</span>
+        <button class="btn btn-success" @click="runTask('replace', true)" :disabled="running">执行替换</button>
+
+        <button class="btn btn-danger" @click="deleteSelected" :disabled="running">🗑️ 删除记录</button>
+      </div>
+
+      <!-- Records Table -->
+      <div class="table-wrapper">
+        <div class="table-toolbar">
+          <input v-model="search" placeholder="🔍 搜索标题、链接..." />
+          <div class="filter-btns">
+            <button class="filter-btn" :class="{active: filter===''}" @click="filter=''">全部</button>
+            <button class="filter-btn" :class="{active: filter==='已采集'}" @click="filter='已采集'">已采集</button>
+            <button class="filter-btn" :class="{active: filter==='已转存'}" @click="filter='已转存'">已转存</button>
+            <button class="filter-btn" :class="{active: filter==='已分享'}" @click="filter='已分享'">已分享</button>
+            <button class="filter-btn" :class="{active: filter==='已替换'}" @click="filter='已替换'">已替换</button>
+            <button class="filter-btn" :class="{active: filter==='失败'}" @click="filter='失败'">失败</button>
+          </div>
+        </div>
+
+        <div v-if="filteredRecords.length === 0" class="empty-state">
+          <div class="icon">📋</div>
+          <p>暂无记录，点击"采集链接"开始</p>
+        </div>
+
+        <table v-else class="records-table">
+          <thead>
+            <tr>
+              <th style="width: 40px"><input type="checkbox" :checked="selected.length === pagedRecords.length && pagedRecords.length > 0" @change="toggleSelectAll" /></th>
+              <th>ID</th>
+              <th>标题</th>
+              <th>原链接</th>
+              <th>新链接</th>
+              <th>状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in pagedRecords" :key="r.postId + r.originalLink" :class="{selected: isSelected(r)}">
+              <td><input type="checkbox" :checked="isSelected(r)" @change="toggleSelect(r)" /></td>
+              <td>{{ r.postId }}</td>
+              <td class="title-cell" :title="r.title">{{ r.title }}</td>
+              <td class="link-cell"><a :href="r.originalLink" target="_blank">{{ r.originalLink }}</a></td>
+              <td class="link-cell">
+                <a v-if="r.newLink" :href="r.newLink" target="_blank">{{ r.newLink }}</a>
+                <span v-else style="color:var(--text-muted)">—</span>
+              </td>
+              <td><span class="status-badge" :class="'status-' + r.status">{{ r.status }}</span></td>
+              <td>
+                <button class="btn btn-secondary" style="padding:4px 8px; font-size:11px" @click="editRecord(r)">编辑</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div v-if="totalPages > 1" class="pagination">
+          <button class="btn btn-secondary" @click="page--" :disabled="page<=1">← 上一页</button>
+          <span style="padding:8px;color:var(--text-muted)">{{ page }} / {{ totalPages }}</span>
+          <button class="btn btn-secondary" @click="page++" :disabled="page>=totalPages">下一页 →</button>
+        </div>
+      </div>
+
+      <!-- Log Panel -->
+      <div class="log-panel">
+        <div class="log-header">
+          <h3>📋 运行日志</h3>
+          <button class="btn btn-secondary" style="padding:5px 12px;font-size:12px" @click="logs=[]">清空</button>
+        </div>
+        <div class="log-body" ref="logBody">
+          <div v-if="logs.length===0" style="color:var(--text-muted);padding:20px;text-align:center">等待任务执行...</div>
+          <div v-for="(l,i) in logs" :key="i" class="log-line" :class="l.level">{{ l.message }}</div>
+        </div>
+      </div>
+
+      <!-- Edit Modal -->
+      <div v-if="editing" class="modal-overlay" @click.self="editing = null">
+        <div class="modal-card">
+          <div class="modal-header">📝 编辑记录</div>
+          <div class="form-group">
+            <label>原网盘链接</label>
+            <input v-model="editForm.originalLink" readonly style="opacity:0.6" />
+          </div>
+          <div class="form-group">
+            <label>新分享链接</label>
+            <input v-model="editForm.newLink" placeholder="请输入新链接" />
+          </div>
+          <div class="form-group">
+            <label>提取码</label>
+            <input v-model="editForm.password" placeholder="请输入提取码" />
+          </div>
+          <div class="form-group">
+            <label>当前状态</label>
+            <select v-model="editForm.status">
+              <option v-for="s in statusOptions" :key="s" :value="s">{{s}}</option>
+            </select>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" @click="editing = null">取消</button>
+            <button class="btn btn-primary" @click="saveEdit">保存修改</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = window.location.origin;
+
+    const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
+
+    createApp({
+      setup() {
+        const records = ref([]);
+        const stats = ref({});
+        const logs = ref([]);
+        const running = ref(false);
+        const runningTask = ref('');
+        const search = ref('');
+        const filter = ref('');
+        const page = ref(1);
+        const pageSize = 30;
+        const logBody = ref(null);
+        const selected = ref([]); // 选中的记录 [{postId, originalLink}, ...]
+        const editing = ref(null); // 当前正在编辑的记录
+        const editForm = ref({ postId: '', originalLink: '', newLink: '', password: '', status: '' });
+        const statusOptions = ['待处理', '已采集', '已转存', '已分享', '已替换', '转存失败', '分享失败', '替换失败', '跳过'];
+        let pollTimer = null;
+        let lastLogTime = 0;
+
+        const isSelected = (r) => selected.value.some(s => s.postId === r.postId && s.originalLink === r.originalLink);
+        const toggleSelect = (r) => {
+          const idx = selected.value.findIndex(s => s.postId === r.postId && s.originalLink === r.originalLink);
+          if (idx > -1) selected.value.splice(idx, 1);
+          else selected.value.push({ postId: r.postId, originalLink: r.originalLink });
+        };
+        const toggleSelectAll = () => {
+          if (selected.value.length === pagedRecords.value.length) selected.value = [];
+          else selected.value = pagedRecords.value.map(r => ({ postId: r.postId, originalLink: r.originalLink }));
+        };
+
+        const failCount = computed(() => {
+          return (stats.value['转存失败'] || 0) + (stats.value['分享失败'] || 0) + (stats.value['替换失败'] || 0);
+        });
+
+        const filteredRecords = computed(() => {
+          let list = records.value;
+          if (filter.value === '失败') {
+            list = list.filter(r => r.status.includes('失败'));
+          } else if (filter.value) {
+            list = list.filter(r => r.status === filter.value);
+          }
+          if (search.value) {
+            const q = search.value.toLowerCase();
+            list = list.filter(r =>
+              (r.title || '').toLowerCase().includes(q) ||
+              (r.originalLink || '').toLowerCase().includes(q) ||
+              (r.postId || '').toString().includes(q)
+            );
+          }
+          return list;
+        });
+
+        const totalPages = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / pageSize)));
+        const pagedRecords = computed(() => {
+          const start = (page.value - 1) * pageSize;
+          return filteredRecords.value.slice(start, start + pageSize);
+        });
+
+        async function fetchRecords() {
+          try {
+            const res = await fetch(`${API}/api/records`);
+            const json = await res.json();
+            records.value = json.data || [];
+            stats.value = json.stats || {};
+          } catch (e) { console.error('fetchRecords:', e); }
+        }
+
+        async function fetchLogs() {
+          try {
+            const res = await fetch(`${API}/api/logs?since=${lastLogTime}`);
+            const json = await res.json();
+            if (json.logs.length > 0) {
+              logs.value.push(...json.logs);
+              lastLogTime = json.logs[json.logs.length - 1].time;
+              nextTick(() => {
+                if (logBody.value) logBody.value.scrollTop = logBody.value.scrollHeight;
+              });
+            }
+            running.value = json.running;
+            if (!json.running && pollTimer) {
+              clearInterval(pollTimer);
+              pollTimer = null;
+              fetchRecords();
+            }
+          } catch (e) { console.error('fetchLogs:', e); }
+        }
+
+        async function runTask(task, useSelection = false) {
+          if (running.value) return;
+          
+          const body = {};
+          if (useSelection) {
+            if (selected.value.length === 0) return alert('请先勾选要处理的记录');
+            body.ids = selected.value;
+          }
+
+          running.value = true;
+          runningTask.value = task;
+          logs.value = [];
+          lastLogTime = 0;
+
+          try {
+            await fetch(`${API}/api/run/${task}`, { 
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+            pollTimer = setInterval(() => {
+              fetchLogs();
+              fetchRecords();
+            }, 2000);
+          } catch (e) {
+            running.value = false;
+            console.error('runTask:', e);
+          }
+        }
+
+        async function stopTask() {
+          if (!running.value) return;
+          if (!confirm('确定要强行终止当前任务吗？')) return;
+          try {
+            await fetch(`${API}/api/stop`, { method: 'POST' });
+          } catch (e) { alert('停止请求失败: ' + e.message); }
+        }
+
+        async function deleteSelected() {
+          if (selected.value.length === 0) return alert('请先勾选要删除的记录');
+          if (!confirm(`确定要删除选中的 ${selected.value.length} 条记录吗？`)) return;
+          
+          try {
+            const res = await fetch(`${API}/api/delete`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ids: selected.value })
+            });
+            const json = await res.json();
+            alert(`已删除 ${json.deleted} 条记录`);
+            selected.value = [];
+            fetchRecords();
+          } catch (e) { alert('删除失败: ' + e.message); }
+        }
+
+        function editRecord(r) {
+          editing.value = r;
+          editForm.value = { 
+            postId: r.postId, 
+            originalLink: r.originalLink, 
+            newLink: r.newLink || '', 
+            password: r.password || '', 
+            status: r.status 
+          };
+        }
+
+        async function saveEdit() {
+          try {
+            const res = await fetch(`${API}/api/records/update`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                postId: editForm.value.postId,
+                originalLink: editForm.value.originalLink,
+                fields: {
+                  newLink: editForm.value.newLink,
+                  password: editForm.value.password,
+                  status: editForm.value.status
+                }
+              })
+            });
+            const json = await res.json();
+            if (res.ok) {
+              editing.value = null;
+              fetchRecords();
+            } else {
+              alert('保存失败: ' + json.error);
+            }
+          } catch (e) { alert('网络错误: ' + e.message); }
+        }
+
+        async function importOld() {
+          try {
+            const res = await fetch(`${API}/api/import`, { method: 'POST' });
+            const json = await res.json();
+            alert(`导入完成: 新增 ${json.imported} 条 (总计 ${json.total} 条)`);
+            fetchRecords();
+          } catch (e) { alert('导入失败: ' + e.message); }
+        }
+
+
+
+        function exportCsv() {
+          window.open(`${API}/api/export`, '_blank');
+        }
+
+        watch(filter, () => { page.value = 1; });
+        watch(search, () => { page.value = 1; });
+
+        onMounted(() => { fetchRecords(); });
+
+        return {
+          records, stats, logs, running, runningTask, search, filter,
+          page, totalPages, pagedRecords, filteredRecords, failCount,
+          logBody, runTask, importOld, exportCsv, fetchRecords,
+          selected, isSelected, toggleSelect, toggleSelectAll, deleteSelected,
+          editing, editForm, statusOptions, editRecord, saveEdit,
+          stopTask,
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
