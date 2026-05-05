@@ -1,6 +1,18 @@
 # TeraBox 链接替换工具 - 版本更新记录
 
-## v2.0.3 (2026-05-04)
+## v2.1.0 (2026-05-05)
+### 🐛 修复
+- **认证修复**: `getShareInfo()` 移除 jsToken/bdstoken/Cookie 认证参数（这些参数反而导致公开接口返回 `errno=4000020`）；Cookie 变量兼容 `TERABOX_COOKIE` 和 `TERABOX_NDUS` 两种命名
+- **状态修复**: `errno=4000020` 错误从 `DELETED`（已删除）改为 `INVALID`（资源失效），语义更准确
+- **文件名校验**: `transfer.js` 增加兜底逻辑，当 API 失败但 HTML/记录中已有文件名时仍可做文件名查重
+
+### 🚀 新特性
+- **Docker 支持**: 新增 `Dockerfile`、`docker-compose.yml`、`.dockerignore`，支持容器化部署
+- **全流程补全**: `run` 命令现在包含 `sync_filename` 步骤，完整流程为 `crawl → sync_filename → transfer → share → replace`
+
+### 🛠️ 优化
+- **域名兼容**: `listDir` 增加 `terabox.app` 域名尝试；`getShareInfo` 各域名错误响应详细日志
+- **跨域兼容**: `transfer` 函数改为多域名轮询，失败时自动切换域名
 ### 🛠️ 优化与修复
 - **持久化日志**: 更新了 `logger.js`，现在所有运行日志都会自动保存到 `data/logs/app.log` 文件中，方便后续排查问题和留档。
 

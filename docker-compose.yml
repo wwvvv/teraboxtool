@@ -1,0 +1,11 @@
+services:
+  teratool:
+    build: .
+    container_name: teratool
+    ports:
+      - "3721:3721"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

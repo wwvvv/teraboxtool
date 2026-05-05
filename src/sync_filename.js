@@ -98,10 +98,10 @@ async function syncFilename(targetList = null) {
         if (err.message === 'TASK_STOPPED') throw err;
         
         if (err.message.includes('4000020')) {
-          log.error(`  [失败] 链接失效或无法访问 (errno=4000020)，标记为已删除`);
+          log.error(`  [失败] 链接已失效 (errno=4000020)，标记为资源失效`);
           records.update(rec.postId, rec.originalLink, {
-            status: STATUS.DELETED,
-            error: '链接失效 (4000020)',
+            status: STATUS.INVALID,
+            error: '链接已失效 (4000020)',
           });
           failCount++;
           break; // 不再重试

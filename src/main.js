@@ -7,7 +7,7 @@ const log = require('./lib/logger');
 const Records = require('./records');
 const path = require('path');
 
-const VERSION = '2.0.3';
+const VERSION = '2.1.0';
 
 async function main() {
   const cmd = process.argv[2];
@@ -39,11 +39,13 @@ async function main() {
       // 全流程串行执行
       log.divider('全流程执行开始');
       const crawl = require('./crawl');
+      const syncFilename = require('./sync_filename');
       const transfer = require('./transfer');
       const share = require('./share');
       const replace = require('./replace');
 
       await crawl();
+      await syncFilename();
       await transfer();
       await share();
       await replace();

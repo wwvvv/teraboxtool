@@ -71,10 +71,12 @@ app.post('/api/run/:task', async (req, res) => {
   try {
     if (taskName === 'run') {
       const crawl = require('../src/crawl');
+      const syncFilename = require('../src/sync_filename');
       const transfer = require('../src/transfer');
       const share = require('../src/share');
       const replace = require('../src/replace');
       await crawl();
+      await syncFilename();
       await transfer(targetList);
       await share(targetList);
       await replace(targetList);

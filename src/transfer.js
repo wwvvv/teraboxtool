@@ -1,7 +1,7 @@
 /**
- * transfer.js - 转存模块 v2.0.0
+ * transfer.js - 转存模块 v2.1.0
  * Step 4: 通过 TeraBox API 批量转存原网盘链接到自己账号
- * 
+ *
  * 查重逻辑：获取网盘目录文件列表，按文件名查重，目录中有同名文件不转存
  * 仅做转存，不创建分享链接（分享由 share.js 负责）
  */
@@ -13,9 +13,6 @@ const cheerio = require('cheerio');
 const { STATUS } = Records;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/**
- * 统一链接格式：将各种 TeraBox 域名链接转换为 terabox.app 标准格式
- */
 function normalizeLink(url) {
   const m = url.match(/\/s\/1([a-zA-Z0-9_-]+)/);
   if (m) {
@@ -30,7 +27,6 @@ async function transfer(targetList = null) {
   const records = new Records();
   records.load();
 
-  // 筛选待转存的记录
   let pending = [];
   if (targetList) {
     pending = records.data.filter(r =>
@@ -48,7 +44,6 @@ async function transfer(targetList = null) {
     return records;
   }
 
-  // 预先获取网盘目录文件列表（用于文件名查重）
   let diskFiles = [];
   try {
     diskFiles = await terabox.listDir();
@@ -57,7 +52,6 @@ async function transfer(targetList = null) {
     log.warn(`[网盘] 获取目录文件列表失败: ${err.message}，将跳过文件名查重`);
   }
 
-  // 构建文件名集合（不含后缀）
   const diskFileNames = new Set(
     diskFiles.map(f => f.filename.replace(/\.[^/.]+$/, ''))
   );
@@ -72,19 +66,16 @@ async function transfer(targetList = null) {
     let retries = 2;
     while (retries > 0) {
       try {
-        // 1. 统一链接格式
         const shareUrl = normalizeLink(rec.originalLink);
         if (shareUrl !== rec.originalLink) {
           log.info(`  [转换] ${rec.originalLink}`);
           log.info(`      → ${shareUrl}`);
         }
 
-        // 2. 获取分享信息并提取文件名
         log.info(`  [解析] ${shareUrl}`);
-        let fName = '';
+        let fName = rec.fileName || '';
         let shareInfo = null;
 
-        // 方法1：直接获取 HTML 提取 title
         try {
           const htmlRes = await axios.get(shareUrl, {
             headers: {
@@ -96,23 +87,77 @@ async function transfer(targetList = null) {
           let titleStr = $('title').text() || '';
           const match = titleStr.match(/^(.*?)\s+-\s+Share Files Online/);
           if (match && match[1]) {
-             fName = match[1].replace(/\.[^/.]+$/, ''); // 去除后缀
+            const htmlName = match[1].replace(/\.[^/.]+$/, '');
+            if (htmlName) fName = htmlName;
           }
         } catch (e) {
           log.warn(`  [HTML解析] 获取HTML失败: ${e.message}`);
         }
 
-        // 依然需要 API 获取转存用的 info
-        shareInfo = await terabox.getShareInfo(shareUrl, rec.password);
-        log.info(`  [分享] shareid=${shareInfo.shareid}, 文件数=${shareInfo.files.length}`);
+        try {
+          shareInfo = await terabox.getShareInfo(shareUrl, rec.password);
+          log.info(`  [分享] shareid=${shareInfo.shareid}, 文件数=${shareInfo.files.length}`);
 
-        if (!fName) {
-          fName = shareInfo.files.length > 0
-            ? shareInfo.files[0].filename.replace(/\.[^/.]+$/, '')
-            : '';
+          if (!fName && shareInfo.files.length > 0) {
+            fName = shareInfo.files[0].filename.replace(/\.[^/.]+$/, '');
+          }
+
+          if (shareInfo.files.length > 0 && shareInfo.files[0].fs_id) {
+            const apiName = shareInfo.files[0].filename.replace(/\.[^/.]+$/, '');
+            if (apiName && (!fName || fName !== apiName)) {
+              fName = apiName;
+            }
+          }
+        } catch (err) {
+          log.warn(`  [API] getShareInfo失败: ${err.message}`);
+
+          if (!fName) {
+            log.error(`  [失败] 无法获取文件名（API和HTML均失败），跳过`);
+            records.update(rec.postId, rec.originalLink, {
+              status: STATUS.INVALID,
+              error: `无法获取分享信息: ${err.message}`,
+            });
+            failCount++;
+            break;
+          }
+
+          if (fName && diskFileNames.has(fName)) {
+            log.success(`  [查重] 网盘中已有同名文件: ${fName}（API失败但HTML提取到文件名），跳过转存`);
+            records.update(rec.postId, rec.originalLink, {
+              fileName: fName,
+              status: STATUS.TRANSFERRED,
+              error: '',
+            });
+            skipCount++;
+            successCount++;
+            break;
+          }
+
+          if (fName) {
+            const existing = records.findByFileName(fName);
+            if (existing && (existing.postId !== rec.postId || existing.originalLink !== rec.originalLink)) {
+              log.success(`  [查重] 匹配到同名记录: ${existing.title || existing.postId}（API失败但HTML提取到文件名）`);
+              records.update(rec.postId, rec.originalLink, {
+                fileName: fName,
+                status: existing.newLink ? STATUS.SHARED : STATUS.TRANSFERRED,
+                newLink: existing.newLink || '',
+                error: '',
+              });
+              skipCount++;
+              successCount++;
+              break;
+            }
+          }
+
+          log.error(`  [失败] API失败且无法匹配文件名，标记为资源失效`);
+          records.update(rec.postId, rec.originalLink, {
+            status: STATUS.INVALID,
+            error: `API失败: ${err.message}，文件名: ${fName}`,
+          });
+          failCount++;
+          break;
         }
 
-        // 3. 文件名查重：网盘目录中已有同名文件则跳过转存
         if (fName && diskFileNames.has(fName)) {
           log.success(`  [查重] 网盘中已有同名文件: ${fName}，跳过转存`);
           records.update(rec.postId, rec.originalLink, {
@@ -122,10 +167,9 @@ async function transfer(targetList = null) {
           });
           skipCount++;
           successCount++;
-          break; // 跳过实际转存
+          break;
         }
 
-        // 4. 检查记录中是否有已转存/已分享/已替换的同名文件
         if (fName) {
           const existing = records.findByFileName(fName);
           if (existing && (existing.postId !== rec.postId || existing.originalLink !== rec.originalLink)) {
@@ -142,7 +186,6 @@ async function transfer(targetList = null) {
           }
         }
 
-        // 5. 执行转存
         const result = await terabox.transfer(shareInfo, rec.password);
         if (result.success) {
           log.success(`  [转存成功] errno=${result.errno}`);
@@ -151,7 +194,6 @@ async function transfer(targetList = null) {
             fileName: fName,
             error: '',
           });
-          // 更新本地文件名集合
           if (fName) diskFileNames.add(fName);
           successCount++;
           break;
@@ -160,10 +202,10 @@ async function transfer(targetList = null) {
         if (err.message === 'TASK_STOPPED') throw err;
 
         if (err.message.includes('4000020')) {
-          log.error(`  [失败] 链接失效或无法访问 (errno=4000020)，标记为已删除`);
+          log.error(`  [失败] 链接已失效 (errno=4000020)，标记为资源失效`);
           records.update(rec.postId, rec.originalLink, {
-            status: STATUS.DELETED,
-            error: '链接失效 (4000020)',
+            status: STATUS.INVALID,
+            error: '链接已失效 (4000020)',
           });
           failCount++;
           break;
@@ -186,7 +228,6 @@ async function transfer(targetList = null) {
 
     records.save();
 
-    // 限速：随机 5-10 秒间隔
     const delay = Math.floor(Math.random() * 5000) + 5000;
     log.info(`  等待 ${Math.round(delay / 1000)} 秒...`);
     await sleep(delay);
