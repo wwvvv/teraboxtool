@@ -32,12 +32,16 @@ class TeraBoxApi {
     this.ndus = extractNdus(COOKIE_STR);
     this.csrf = extractCsrf(COOKIE_STR);
     this.headers = {
-      'Cookie': COOKIE_STR,
+      'Cookie': COOKIE_STR + '; PANWEB=1',
       'User-Agent': UA,
       'Accept': 'application/json, text/plain, */*',
       'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8',
     };
     this.appId = '250528';
+  }
+
+  getBaseQuery() {
+    return `app_id=${this.appId}&web=1&channel=dubox&clienttype=0&jsToken=${encodeURIComponent(JSTOKEN)}&bdstoken=${encodeURIComponent(BDSTOKEN)}`;
   }
 
   /**
@@ -57,29 +61,50 @@ class TeraBoxApi {
   /**
    * 获取分享信息（shareid, uk, file列表）
    */
-  async getShareInfo(shareUrl) {
+  async getShareInfo(shareUrl, password = '') {
     const surl = this.extractSurl(shareUrl);
     if (!surl) throw new Error(`无法解析surl: ${shareUrl}`);
 
-    const shorturl = surl.startsWith('1') ? surl.substring(1) : surl;
+    let shorturl = surl;
+    if (shorturl.startsWith('1')) {
+      shorturl = shorturl.substring(1);
+    }
 
     try {
       // 尝试多个域名
-      const domains = ['www.terabox.com', 'www.1024terabox.com', 'www.terabox.app'];
+      const domains = ['www.terabox.app', 'www.terabox.com', 'www.1024terabox.com'];
       let lastErr = null;
 
       for (const domain of domains) {
         try {
-          const url = `https://${domain}/api/shorturlinfo?app_id=${this.appId}&shorturl=${shorturl}&root=1`;
-          const resp = await axios.get(url, {
+          const url = `https://${domain}/share/list?${this.getBaseQuery()}&shorturl=${shorturl}&root=1&page=1`;
+          let resp = await axios.get(url, {
             headers: { ...this.headers, 'Referer': `https://${domain}/` },
             timeout: 15000,
           });
 
+          // 如果需要密码验证
+          if ([ -9, -18, 400141 ].includes(resp.data.errno) && password) {
+             const verifyUrl = `https://${domain}/share/verify?${this.getBaseQuery()}&shareid=${resp.data.shareid || resp.data.share_id || ''}&uk=${resp.data.uk || ''}`;
+             const verifyParams = new URLSearchParams();
+             verifyParams.append('pwd', password);
+             verifyParams.append('vcode', '');
+             verifyParams.append('vcode_str', '');
+             await axios.post(verifyUrl, verifyParams, {
+                 headers: { ...this.headers, 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `https://${domain}/` },
+                 timeout: 15000
+             });
+             // 重新获取列表
+             resp = await axios.get(url, {
+                headers: { ...this.headers, 'Referer': `https://${domain}/` },
+                timeout: 15000,
+             });
+          }
+
           if (resp.data.errno === 0) {
             const list = resp.data.list || [];
             return {
-              shareid: resp.data.shareid,
+              shareid: resp.data.shareid || resp.data.share_id,
               uk: resp.data.uk,
               sign: resp.data.sign || '',
               timestamp: resp.data.timestamp || 0,
@@ -114,15 +139,11 @@ class TeraBoxApi {
     const fsIds = files.map(f => f.fs_id);
     const filenames = files.map(f => '/' + f.filename);
 
-    const url = `https://${domain}/share/transfer?shareid=${shareid}&from=${uk}&app_id=${this.appId}&channel=dubox&clienttype=0&web=1`;
+    const url = `https://${domain}/share/transfer?${this.getBaseQuery()}&shareid=${shareid}&from=${uk}&ondup=newcopy`;
 
     const params = new URLSearchParams();
     params.append('fsidlist', JSON.stringify(fsIds));
     params.append('path', DEST_PATH);
-
-    if (password) {
-      params.append('sekey', password);
-    }
 
     try {
       const resp = await axios.post(url, params, {
@@ -134,8 +155,8 @@ class TeraBoxApi {
         timeout: 30000,
       });
 
-      // errno=0 成功, errno=12 已存在
-      if (resp.data.errno === 0 || resp.data.errno === 12) {
+      // errno=0 成功, errno=4, errno=12 已存在
+      if (resp.data.errno === 0 || resp.data.errno === 4 || resp.data.errno === 12) {
         const extra = resp.data.extra || {};
         const info = extra.list || [];
         return {
@@ -162,7 +183,7 @@ class TeraBoxApi {
 
     for (const domain of domains) {
       try {
-        const url = `https://${domain}/api/list?app_id=${this.appId}&dir=${encodeURIComponent(dirPath)}&order=time&desc=1&web=1&page=1&num=1000&channel=dubox&clienttype=0`;
+        const url = `https://${domain}/api/list?${this.getBaseQuery()}&dir=${encodeURIComponent(dirPath)}&order=time&desc=1&page=1&num=1000`;
         const resp = await axios.get(url, {
           headers: { ...this.headers, 'Referer': `https://${domain}/` },
           timeout: 15000,
@@ -188,44 +209,47 @@ class TeraBoxApi {
 
   /**
    * 创建公开分享链接
+   * @param {Array} fsIds - 文件 fs_id 列表
+   * @param {Array} filePaths - 文件路径列表（可选，提高成功率）
    */
-  async createShare(fsIds) {
+  async createShare(fsIds, filePaths = []) {
     if (!Array.isArray(fsIds)) fsIds = [fsIds];
-    const domains = ['www.terabox.com', 'www.1024terabox.com'];
-    let lastErr = null;
+    if (!Array.isArray(filePaths)) filePaths = [filePaths];
 
-    for (const domain of domains) {
-      try {
-        const url = `https://${domain}/share/pset?app_id=${this.appId}&web=1&channel=dubox&clienttype=0`;
-        const params = new URLSearchParams();
-        params.append('fid_list', JSON.stringify(fsIds));
-        params.append('schannel', '0');
-        params.append('channel_list', '[0]');
-        params.append('period', '0');
-        params.append('pwd', '');
-        params.append('public', '1');
-
-        const resp = await axios.post(url, params, {
-          headers: {
-            ...this.headers,
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Referer': `https://${domain}/main`,
-          },
-          timeout: 15000,
-        });
-
-        // errno=0 成功, errno=110 已分享
-        if (resp.data.errno === 0 || resp.data.errno === 110) {
-          const link = resp.data.link || resp.data.shorturl || '';
-          if (link) return link;
-          if (resp.data.errno === 110) return 'ALREADY_SHARED';
-        }
-        lastErr = `errno=${resp.data.errno}: ${JSON.stringify(resp.data)}`;
-      } catch (e) {
-        lastErr = e.message;
-      }
+    // terabox.app 域名 + 无需 jsToken/bdstoken 才能成功调用 share/pset
+    const url = `https://www.terabox.app/share/pset?app_id=${this.appId}&web=1&channel=dubox&clienttype=0`;
+    const params = new URLSearchParams();
+    params.append('fid_list', JSON.stringify(fsIds));
+    if (filePaths.length > 0) {
+      params.append('path_list', JSON.stringify(filePaths));
     }
-    throw new Error(`createShare失败: ${lastErr}`);
+    params.append('schannel', '0');
+    params.append('channel_list', '[0]');
+    params.append('period', '0');
+    params.append('pwd', '');
+    params.append('public', '1');
+
+    try {
+      const resp = await axios.post(url, params, {
+        headers: {
+          ...this.headers,
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Referer': 'https://www.terabox.app/main',
+        },
+        timeout: 15000,
+      });
+
+      // errno=0 成功, errno=110 已分享
+      if (resp.data.errno === 0 || resp.data.errno === 110) {
+        const link = resp.data.link || resp.data.shorturl || '';
+        if (link) return link;
+        if (resp.data.errno === 110) return 'ALREADY_SHARED';
+      }
+      throw new Error(`errno=${resp.data.errno}: ${JSON.stringify(resp.data)}`);
+    } catch (e) {
+      if (e.message.includes('errno=')) throw new Error(`createShare失败: ${e.message}`);
+      throw new Error(`createShare失败: ${e.message}`);
+    }
   }
 
   /**

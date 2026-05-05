@@ -1,5 +1,5 @@
 /**
- * server/index.js - Express 后端 API 服务 v1.0.0
+ * server/index.js - Express 后端 API 服务 v2.0.0
  * 提供 REST API 给 Vue 前端调用
  */
 require('dotenv').config();
@@ -53,7 +53,7 @@ app.get('/api/logs', (req, res) => {
 // API: 执行任务
 app.post('/api/run/:task', async (req, res) => {
   const taskName = req.params.task;
-  const validTasks = ['crawl', 'transfer', 'share', 'replace', 'run'];
+  const validTasks = ['crawl', 'sync_filename', 'transfer', 'share', 'replace', 'run'];
   if (!validTasks.includes(taskName)) {
     return res.status(400).json({ error: `无效任务: ${taskName}` });
   }
@@ -120,6 +120,21 @@ app.post('/api/stop', (req, res) => {
   res.json({ message: '已发送终止信号' });
 });
 
+// API: 批量重置状态
+app.post('/api/reset', (req, res) => {
+  const { targetStatus, ids } = req.body;
+  const validTargets = ['已采集', '已转存'];
+  if (!targetStatus || !validTargets.includes(targetStatus)) {
+    return res.status(400).json({ error: `无效目标状态: ${targetStatus}，仅支持: ${validTargets.join(', ')}` });
+  }
+
+  const records = new Records();
+  records.load();
+  const count = records.resetStatus(targetStatus, ids || null);
+  records.save();
+  records.exportCsv();
+  res.json({ message: `已重置 ${count} 条记录到 ${targetStatus}`, count });
+});
 
 // API: 导入旧数据
 app.post('/api/import', (req, res) => {

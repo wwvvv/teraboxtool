@@ -7,7 +7,7 @@ const log = require('./lib/logger');
 const Records = require('./records');
 const path = require('path');
 
-const VERSION = '1.3.0';
+const VERSION = '2.0.3';
 
 async function main() {
   const cmd = process.argv[2];

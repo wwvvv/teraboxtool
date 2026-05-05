@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TeraBox 链接替换管理</title>
+  <title>TeraBox 链接替换管理 v2.0.0</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
@@ -117,6 +117,8 @@
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: var(--accent); color: #fff; }
     .btn-primary:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
+    .btn-info { background: var(--blue); color: #fff; }
+    .btn-info:hover:not(:disabled) { opacity: 0.9; }
     .btn-secondary { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); }
     .btn-secondary:hover:not(:disabled) { background: var(--bg-card-hover); }
     .btn-success { background: var(--green); color: #fff; }
@@ -243,12 +245,13 @@
     .status-已替换 { background: var(--green-bg); color: var(--green); }
     .status-待处理 { background: rgba(107,114,128,0.15); color: var(--text-muted); }
     .status-转存失败, .status-分享失败, .status-替换失败 { background: var(--red-bg); color: var(--red); }
+    .status-已删除, .status-资源失效 { background: var(--border); color: var(--text-muted); text-decoration: line-through; }
 
-    .link-cell { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .link-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .link-cell a { color: var(--accent); text-decoration: none; }
     .link-cell a:hover { text-decoration: underline; }
 
-    .title-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .title-cell { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* Log Panel */
     .log-panel {
@@ -298,16 +301,13 @@
   <div id="app">
     <header class="app-header">
       <h1>🔗 TeraBox 链接替换管理</h1>
-      <span class="version">v1.3.0</span>
+      <span class="version">v2.0.3</span>
     </header>
 
     <div class="container">
       <!-- Stats -->
       <div class="stats-grid">
-        <div class="stat-card total">
-          <div class="label">总记录</div>
-          <div class="value">{{ stats.total || 0 }}</div>
-        </div>
+
         <div class="stat-card" style="--accent-color: var(--blue)">
           <div class="label">已采集</div>
           <div class="value" style="color:var(--blue)">{{ stats['已采集'] || 0 }}</div>
@@ -326,20 +326,21 @@
         </div>
         <div class="stat-card error">
           <div class="label">失败</div>
-          <div class="value">{{ failCount }}</div>
+          <div class="value">{{ stats['失败'] || 0 }}</div>
         </div>
       </div>
 
       <!-- Actions -->
       <div class="action-bar">
-        <button class="btn btn-primary" @click="runTask('crawl')" :disabled="running">📥 采集链接</button>
+        <button class="btn btn-primary" @click="runTask('crawl')" :disabled="running">📥 采集文章</button>
+        <button class="btn btn-info" @click="runTask('sync_filename')" :disabled="running">🔄 同步文件名</button>
         <button class="btn btn-secondary" @click="runTask('transfer')" :disabled="running">📦 批量转存</button>
-        <button class="btn btn-secondary" @click="runTask('share')" :disabled="running">🔗 创建分享</button>
-        <button class="btn btn-success" @click="runTask('replace')" :disabled="running">✅ 替换链接</button>
+        <button class="btn btn-secondary" @click="runTask('share')" :disabled="running">🔗 批量分享</button>
+        <button class="btn btn-success" @click="runTask('replace')" :disabled="running">✅ 批量替换</button>
         <button class="btn btn-warning" @click="runTask('run')" :disabled="running">🚀 全流程执行</button>
-        <button class="btn btn-secondary" @click="importOld" :disabled="running">📂 导入旧数据</button>
-
+        <button class="btn btn-secondary" @click="showReset = true" :disabled="running">🔄 初始化/重置</button>
         <button class="btn btn-secondary" @click="exportCsv">📄 导出CSV</button>
+        
         <div v-if="running" class="running-indicator">
           <span class="dot"></span>
           {{ runningTask }} 执行中...
@@ -349,15 +350,18 @@
 
       <div v-if="selected.length > 0" class="action-bar" style="background: var(--bg-card); padding: 12px; border-radius: 8px; border: 1px solid var(--accent)">
         <span style="font-size: 14px; font-weight: 600; color: var(--accent)">已选择 {{ selected.length }} 项:</span>
-        <button class="btn btn-success" @click="runTask('replace', true)" :disabled="running">执行替换</button>
-
-        <button class="btn btn-danger" @click="deleteSelected" :disabled="running">🗑️ 删除记录</button>
+        <button class="btn btn-info" style="padding:4px 12px;font-size:12px" @click="runTask('sync_filename', true)" :disabled="running">同步选中</button>
+        <button class="btn btn-primary" style="padding:4px 12px;font-size:12px" @click="runTask('transfer', true)" :disabled="running">转存选中</button>
+        <button class="btn btn-secondary" style="padding:4px 12px;font-size:12px" @click="runTask('share', true)" :disabled="running">分享选中</button>
+        <button class="btn btn-success" style="padding:4px 12px;font-size:12px" @click="runTask('replace', true)" :disabled="running">替换选中</button>
+        <button class="btn btn-warning" style="padding:4px 12px;font-size:12px" @click="openResetSelection">重置选中</button>
+        <button class="btn btn-danger" style="padding:4px 12px;font-size:12px" @click="deleteSelected" :disabled="running">🗑️ 删除选中</button>
       </div>
 
       <!-- Records Table -->
       <div class="table-wrapper">
         <div class="table-toolbar">
-          <input v-model="search" placeholder="🔍 搜索标题、链接..." />
+          <input v-model="search" placeholder="🔍 搜索标题、文件名、链接..." />
           <div class="filter-btns">
             <button class="filter-btn" :class="{active: filter===''}" @click="filter=''">全部</button>
             <button class="filter-btn" :class="{active: filter==='已采集'}" @click="filter='已采集'">已采集</button>
@@ -365,21 +369,24 @@
             <button class="filter-btn" :class="{active: filter==='已分享'}" @click="filter='已分享'">已分享</button>
             <button class="filter-btn" :class="{active: filter==='已替换'}" @click="filter='已替换'">已替换</button>
             <button class="filter-btn" :class="{active: filter==='失败'}" @click="filter='失败'">失败</button>
+            <button class="filter-btn" :class="{active: filter==='已删除'}" @click="filter='已删除'">已删除</button>
+            <button class="filter-btn" :class="{active: filter==='资源失效'}" @click="filter='资源失效'">资源失效</button>
           </div>
         </div>
 
         <div v-if="filteredRecords.length === 0" class="empty-state">
           <div class="icon">📋</div>
-          <p>暂无记录，点击"采集链接"开始</p>
+          <p>暂无记录，点击"采集文章"开始</p>
         </div>
 
         <table v-else class="records-table">
           <thead>
             <tr>
-              <th style="width: 40px"><input type="checkbox" :checked="selected.length === pagedRecords.length && pagedRecords.length > 0" @change="toggleSelectAll" /></th>
+              <th style="width: 40px"><input type="checkbox" :checked="isAllSelected" @change="toggleSelectAll" /></th>
               <th>ID</th>
               <th>标题</th>
-              <th>原链接</th>
+              <th>文件名</th>
+              <th>下载地址</th>
               <th>新链接</th>
               <th>状态</th>
               <th>操作</th>
@@ -390,7 +397,13 @@
               <td><input type="checkbox" :checked="isSelected(r)" @change="toggleSelect(r)" /></td>
               <td>{{ r.postId }}</td>
               <td class="title-cell" :title="r.title">{{ r.title }}</td>
-              <td class="link-cell"><a :href="r.originalLink" target="_blank">{{ r.originalLink }}</a></td>
+              <td class="title-cell" :title="r.fileName">
+                <span v-if="r.fileName">{{ r.fileName }}</span>
+                <span v-else style="color:var(--text-muted)">—</span>
+              </td>
+              <td class="link-cell" :title="r.downloadUrl || r.originalLink">
+                <a :href="r.downloadUrl || r.originalLink" target="_blank">{{ r.downloadUrl || r.originalLink }}</a>
+              </td>
               <td class="link-cell">
                 <a v-if="r.newLink" :href="r.newLink" target="_blank">{{ r.newLink }}</a>
                 <span v-else style="color:var(--text-muted)">—</span>
@@ -427,16 +440,20 @@
         <div class="modal-card">
           <div class="modal-header">📝 编辑记录</div>
           <div class="form-group">
-            <label>原网盘链接</label>
-            <input v-model="editForm.originalLink" readonly style="opacity:0.6" />
+            <label>文件名</label>
+            <input v-model="editForm.fileName" placeholder="文件名（不含后缀）" />
+          </div>
+          <div class="form-group">
+            <label>下载地址 (WP当前值)</label>
+            <input v-model="editForm.downloadUrl" placeholder="当前WP下载链接" />
           </div>
           <div class="form-group">
             <label>新分享链接</label>
-            <input v-model="editForm.newLink" placeholder="请输入新链接" />
+            <input v-model="editForm.newLink" placeholder="生成的分享链接" />
           </div>
           <div class="form-group">
             <label>提取码</label>
-            <input v-model="editForm.password" placeholder="请输入提取码" />
+            <input v-model="editForm.password" placeholder="提取码" />
           </div>
           <div class="form-group">
             <label>当前状态</label>
@@ -447,6 +464,28 @@
           <div class="modal-actions">
             <button class="btn btn-secondary" @click="editing = null">取消</button>
             <button class="btn btn-primary" @click="saveEdit">保存修改</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reset Modal -->
+      <div v-if="showReset" class="modal-overlay" @click.self="showReset = false">
+        <div class="modal-card">
+          <div class="modal-header">🔄 状态重置/初始化</div>
+          <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 20px;">
+            {{ resetMode === 'selection' ? `将重置选中的 ${selected.length} 条记录。` : '将重置所有记录。' }}
+          </p>
+          <div class="form-group">
+            <label>目标阶段</label>
+            <select v-model="resetTarget">
+              <option value="已采集">重置到 [已采集] (清空新链接/报错，保留文件名)</option>
+              <option value="已转存">重置到 [已转存] (清空新链接/报错，保留文件名)</option>
+              <option value="已分享">重置到 [已分享] (用于重新执行替换任务)</option>
+            </select>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-secondary" @click="showReset = false">取消</button>
+            <button class="btn btn-warning" @click="confirmReset">确认执行</button>
           </div>
         </div>
       </div>
@@ -470,10 +509,13 @@
         const page = ref(1);
         const pageSize = 30;
         const logBody = ref(null);
-        const selected = ref([]); // 选中的记录 [{postId, originalLink}, ...]
-        const editing = ref(null); // 当前正在编辑的记录
-        const editForm = ref({ postId: '', originalLink: '', newLink: '', password: '', status: '' });
-        const statusOptions = ['待处理', '已采集', '已转存', '已分享', '已替换', '转存失败', '分享失败', '替换失败', '跳过'];
+        const selected = ref([]); 
+        const editing = ref(null); 
+        const editForm = ref({ postId: '', originalLink: '', fileName: '', downloadUrl: '', newLink: '', password: '', status: '' });
+        const showReset = ref(false);
+        const resetMode = ref('all');
+        const resetTarget = ref('已采集');
+        const statusOptions = ['待处理', '已采集', '已转存', '已分享', '已替换', '转存失败', '分享失败', '替换失败', '跳过', '已删除', '资源失效'];
         let pollTimer = null;
         let lastLogTime = 0;
 
@@ -483,14 +525,13 @@
           if (idx > -1) selected.value.splice(idx, 1);
           else selected.value.push({ postId: r.postId, originalLink: r.originalLink });
         };
+        const isAllSelected = computed(() => selected.value.length > 0 && selected.value.length === pagedRecords.value.length);
         const toggleSelectAll = () => {
-          if (selected.value.length === pagedRecords.value.length) selected.value = [];
+          if (isAllSelected.value) selected.value = [];
           else selected.value = pagedRecords.value.map(r => ({ postId: r.postId, originalLink: r.originalLink }));
         };
 
-        const failCount = computed(() => {
-          return (stats.value['转存失败'] || 0) + (stats.value['分享失败'] || 0) + (stats.value['替换失败'] || 0);
-        });
+
 
         const filteredRecords = computed(() => {
           let list = records.value;
@@ -503,6 +544,7 @@
             const q = search.value.toLowerCase();
             list = list.filter(r =>
               (r.title || '').toLowerCase().includes(q) ||
+              (r.fileName || '').toLowerCase().includes(q) ||
               (r.originalLink || '').toLowerCase().includes(q) ||
               (r.postId || '').toString().includes(q)
             );
@@ -547,18 +589,15 @@
 
         async function runTask(task, useSelection = false) {
           if (running.value) return;
-          
           const body = {};
           if (useSelection) {
             if (selected.value.length === 0) return alert('请先勾选要处理的记录');
             body.ids = selected.value;
           }
-
           running.value = true;
           runningTask.value = task;
           logs.value = [];
           lastLogTime = 0;
-
           try {
             await fetch(`${API}/api/run/${task}`, { 
               method: 'POST',
@@ -578,15 +617,36 @@
         async function stopTask() {
           if (!running.value) return;
           if (!confirm('确定要强行终止当前任务吗？')) return;
+          try { await fetch(`${API}/api/stop`, { method: 'POST' }); } catch (e) { alert('停止失败: ' + e.message); }
+        }
+
+        function openResetSelection() {
+          resetMode.value = 'selection';
+          showReset.value = true;
+        }
+
+        async function confirmReset() {
+          const body = { targetStatus: resetTarget.value };
+          if (resetMode.value === 'selection') {
+            body.ids = selected.value;
+          }
           try {
-            await fetch(`${API}/api/stop`, { method: 'POST' });
-          } catch (e) { alert('停止请求失败: ' + e.message); }
+            const res = await fetch(`${API}/api/reset`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+            const json = await res.json();
+            alert(json.message);
+            showReset.value = false;
+            selected.value = [];
+            fetchRecords();
+          } catch (e) { alert('重置失败: ' + e.message); }
         }
 
         async function deleteSelected() {
-          if (selected.value.length === 0) return alert('请先勾选要删除的记录');
-          if (!confirm(`确定要删除选中的 ${selected.value.length} 条记录吗？`)) return;
-          
+          if (selected.value.length === 0) return alert('请先勾选');
+          if (!confirm(`确定删除选中的 ${selected.value.length} 条记录吗？`)) return;
           try {
             const res = await fetch(`${API}/api/delete`, {
               method: 'POST',
@@ -594,7 +654,7 @@
               body: JSON.stringify({ ids: selected.value })
             });
             const json = await res.json();
-            alert(`已删除 ${json.deleted} 条记录`);
+            alert(`已删除 ${json.deleted} 条`);
             selected.value = [];
             fetchRecords();
           } catch (e) { alert('删除失败: ' + e.message); }
@@ -603,11 +663,9 @@
         function editRecord(r) {
           editing.value = r;
           editForm.value = { 
-            postId: r.postId, 
-            originalLink: r.originalLink, 
-            newLink: r.newLink || '', 
-            password: r.password || '', 
-            status: r.status 
+            postId: r.postId, originalLink: r.originalLink, 
+            fileName: r.fileName || '', downloadUrl: r.downloadUrl || '',
+            newLink: r.newLink || '', password: r.password || '', status: r.status 
           };
         }
 
@@ -620,36 +678,20 @@
                 postId: editForm.value.postId,
                 originalLink: editForm.value.originalLink,
                 fields: {
+                  fileName: editForm.value.fileName,
+                  downloadUrl: editForm.value.downloadUrl,
                   newLink: editForm.value.newLink,
                   password: editForm.value.password,
                   status: editForm.value.status
                 }
               })
             });
-            const json = await res.json();
-            if (res.ok) {
-              editing.value = null;
-              fetchRecords();
-            } else {
-              alert('保存失败: ' + json.error);
-            }
-          } catch (e) { alert('网络错误: ' + e.message); }
+            if (res.ok) { editing.value = null; fetchRecords(); }
+            else { const j = await res.json(); alert('失败: ' + j.error); }
+          } catch (e) { alert('错误: ' + e.message); }
         }
 
-        async function importOld() {
-          try {
-            const res = await fetch(`${API}/api/import`, { method: 'POST' });
-            const json = await res.json();
-            alert(`导入完成: 新增 ${json.imported} 条 (总计 ${json.total} 条)`);
-            fetchRecords();
-          } catch (e) { alert('导入失败: ' + e.message); }
-        }
-
-
-
-        function exportCsv() {
-          window.open(`${API}/api/export`, '_blank');
-        }
+        function exportCsv() { window.open(`${API}/api/export`, '_blank'); }
 
         watch(filter, () => { page.value = 1; });
         watch(search, () => { page.value = 1; });
@@ -658,11 +700,11 @@
 
         return {
           records, stats, logs, running, runningTask, search, filter,
-          page, totalPages, pagedRecords, filteredRecords, failCount,
-          logBody, runTask, importOld, exportCsv, fetchRecords,
-          selected, isSelected, toggleSelect, toggleSelectAll, deleteSelected,
+          page, totalPages, pagedRecords, filteredRecords,
+          logBody, runTask, stopTask, exportCsv, fetchRecords,
+          selected, isSelected, toggleSelect, toggleSelectAll, isAllSelected, deleteSelected,
           editing, editForm, statusOptions, editRecord, saveEdit,
-          stopTask,
+          showReset, resetMode, resetTarget, confirmReset, openResetSelection
         };
       }
     }).mount('#app');

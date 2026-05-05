@@ -1,6 +1,11 @@
 /**
- * share.js - 分享模块 v1.0.0
+ * share.js - 分享模块 v2.0.0
  * Step 5: 为已转存的文件创建新的公开分享链接
+ * 
+ * 逻辑：
+ * 1. 按 fileName 精确匹配网盘目录中的文件
+ * 2. 创建分享链接
+ * 3. 回填 newLink 到所有具有相同 fileName 的记录
  */
 const terabox = require('./lib/terabox-api');
 const log = require('./lib/logger');
@@ -16,12 +21,12 @@ async function share(targetList = null) {
 
   let pending = [];
   if (targetList) {
-    pending = records.data.filter(r => 
+    pending = records.data.filter(r =>
       targetList.some(t => String(t.postId) === String(r.postId) && t.originalLink === r.originalLink)
     );
   } else {
     pending = records.data.filter(r =>
-      r.status === STATUS.TRANSFERRED || r.status === STATUS.FAILED_SHARE
+      (r.status === STATUS.TRANSFERRED || r.status === STATUS.FAILED_SHARE) && r.status !== STATUS.DELETED && r.status !== STATUS.INVALID
     );
   }
 
@@ -41,6 +46,16 @@ async function share(targetList = null) {
     return records;
   }
 
+  // 构建文件名 → 文件对象映射（不含后缀）
+  const fileMap = new Map();
+  for (const f of fileList) {
+    const nameNoExt = f.filename.replace(/\.[^/.]+$/, '');
+    fileMap.set(nameNoExt, f);
+  }
+
+  // 跟踪已处理的文件名，避免重复分享
+  const sharedFileNames = new Map(); // fileName → shareLink
+
   let successCount = 0, failCount = 0;
 
   for (let i = 0; i < pending.length; i++) {
@@ -49,48 +64,97 @@ async function share(targetList = null) {
     require('./lib/state').check();
 
     try {
-      // 尝试在网盘目录中找到对应文件
-      // 按文件名部分匹配（可能有 Coser@ 前缀等）
-      let targetFile = null;
+      const fileName = rec.fileName;
 
-      // 如果转存信息中有文件路径/名，优先使用
-      // 否则遍历目录查找最近添加的文件
-      for (const f of fileList) {
-        // 按标题关键词匹配
-        const titleWords = rec.title.split(/\s+/).filter(w => w.length > 1);
-        const matchScore = titleWords.filter(w => f.filename.includes(w)).length;
-        if (matchScore >= 1) {
-          targetFile = f;
-          break;
-        }
+      if (!fileName) {
+        log.warn(`  [跳过] 无文件名信息，无法匹配文件`);
+        records.update(rec.postId, rec.originalLink, {
+          status: STATUS.FAILED_SHARE,
+          error: '无文件名信息',
+        });
+        failCount++;
+        continue;
       }
 
-      if (!targetFile) {
-        // 兜底：取最近的文件
-        log.warn(`  [匹配] 未能精确匹配文件，将尝试用整个目录文件创建分享`);
-        // 按时间倒序，取最近的
-        const sorted = [...fileList].sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
-        if (sorted.length > 0) {
-          targetFile = sorted[0];
-        }
+      // 1. 检查是否已有同文件名的分享链接（本轮已处理过）
+      if (sharedFileNames.has(fileName)) {
+        const existingLink = sharedFileNames.get(fileName);
+        log.success(`  [查重] 本轮已分享过相同文件名: ${fileName}`);
+        records.update(rec.postId, rec.originalLink, {
+          newLink: existingLink,
+          status: STATUS.SHARED,
+          error: '',
+        });
+        successCount++;
+        continue;
       }
 
+      // 2. 检查记录中是否已有相同文件名的已分享/已替换记录
+      const existingShared = records.data.find(r =>
+        (r.postId !== rec.postId || r.originalLink !== rec.originalLink) &&
+        (r.status === STATUS.SHARED || r.status === STATUS.REPLACED) &&
+        r.newLink &&
+        r.fileName === fileName
+      );
+
+      if (existingShared) {
+        log.success(`  [查重] 匹配到已分享的记录: ${existingShared.title || existingShared.postId}`);
+        records.update(rec.postId, rec.originalLink, {
+          newLink: existingShared.newLink,
+          status: STATUS.SHARED,
+          error: '',
+        });
+        sharedFileNames.set(fileName, existingShared.newLink);
+        successCount++;
+        continue;
+      }
+
+      // 3. 按文件名精确匹配网盘中的文件
+      const targetFile = fileMap.get(fileName);
+
       if (!targetFile) {
-        throw new Error('网盘目录中没有找到文件');
+        log.error(`  [匹配] 网盘目录中未找到文件: ${fileName}`);
+        records.update(rec.postId, rec.originalLink, {
+          status: STATUS.FAILED_SHARE,
+          error: `网盘中未找到文件: ${fileName}`,
+        });
+        failCount++;
+        continue;
       }
 
       log.info(`  [文件] ${targetFile.filename} (fs_id: ${targetFile.fs_id})`);
 
-      // 创建分享链接
-      const shareLink = await terabox.createShare([targetFile.fs_id]);
+      // 4. 创建分享链接
+      const shareLink = await terabox.createShare([targetFile.fs_id], [targetFile.path]);
 
       if (shareLink && shareLink !== 'ALREADY_SHARED') {
         log.success(`  [分享] ${shareLink}`);
+
+        // 5. 回填到当前记录
         records.update(rec.postId, rec.originalLink, {
           newLink: shareLink,
           status: STATUS.SHARED,
           error: '',
         });
+
+        // 6. 回填到所有具有相同 fileName 的记录
+        const siblings = records.findAllByFileName(fileName);
+        let fillCount = 0;
+        for (const sib of siblings) {
+          if (sib.postId === rec.postId && sib.originalLink === rec.originalLink) continue;
+          if (sib.status === STATUS.REPLACED) continue; // 已替换的不动
+          records.update(sib.postId, sib.originalLink, {
+            newLink: shareLink,
+            status: STATUS.SHARED,
+            error: '',
+          });
+          fillCount++;
+        }
+        if (fillCount > 0) {
+          log.info(`  [回填] 同文件名记录 ${fillCount} 条已更新`);
+        }
+
+        sharedFileNames.set(fileName, shareLink);
         successCount++;
       } else if (shareLink === 'ALREADY_SHARED') {
         log.warn(`  [分享] 文件已分享，需要查找已有链接`);
@@ -101,6 +165,7 @@ async function share(targetList = null) {
         failCount++;
       }
     } catch (err) {
+      if (err.message === 'TASK_STOPPED') throw err;
       log.error(`  [失败] ${err.message}`);
       records.update(rec.postId, rec.originalLink, {
         status: STATUS.FAILED_SHARE,

@@ -1,6 +1,9 @@
 /**
- * crawl.js - 采集模块 v1.0.0
+ * crawl.js - 采集模块 v2.0.0
  * Step 1&2: 通过 WP REST API 获取文章，提取 TeraBox 链接到记录表
+ * 
+ * 查重逻辑：按文章ID查重，记录中有相同文章ID不采集
+ * 记录字段：文章ID、文章标题、文章链接、文件名（初始为空）、下载地址
  */
 const wp = require('./lib/wp-api');
 const log = require('./lib/logger');
@@ -19,6 +22,7 @@ async function crawl() {
   log.info(`共获取 ${posts.length} 篇文章`);
 
   let newCount = 0;
+  let skipCount = 0;
   for (let i = 0; i < posts.length; i++) {
     const post = posts[i];
     const postId = String(post.id);
@@ -28,6 +32,12 @@ async function crawl() {
     log.step(i + 1, posts.length, `${title} (ID:${postId})`);
     const state = require('./lib/state');
     state.check();
+
+    // 按文章ID查重：记录中有相同文章ID则整篇跳过
+    if (records.existsByPostId(postId)) {
+      skipCount++;
+      continue;
+    }
 
     let teraLinks = [];
 
@@ -48,15 +58,14 @@ async function crawl() {
     if (teraLinks.length === 0) continue;
 
     for (const link of teraLinks) {
-      // 查重：如果该文章的这个链接已经在记录中（无论是作为原链接还是新链接），则跳过
-      if (records.exists(postId, link.url)) {
-        continue;
-      }
-      
       const added = records.add({
-        postId, title, postUrl,
+        postId,
+        title,
+        postUrl,
         originalLink: link.url,
+        downloadUrl: link.url,     // 采集时记录当前下载地址
         password: link.password || '',
+        fileName: '',              // 文件名初始为空，转存时填入
       });
       if (added) newCount++;
     }
@@ -74,7 +83,7 @@ async function crawl() {
 
   const stats = records.stats();
   log.divider('采集完成');
-  log.success(`新增 ${newCount} 条记录 (总计 ${records.data.length} 条)`);
+  log.success(`新增 ${newCount} 条记录，跳过 ${skipCount} 篇已采集文章 (总计 ${records.data.length} 条)`);
   log.info(`状态统计: ${JSON.stringify(stats)}`);
 
   return records;

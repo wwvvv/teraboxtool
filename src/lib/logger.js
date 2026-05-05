@@ -14,9 +14,28 @@ const COLORS = {
   gray: '\x1b[90m',
 };
 
+const fs = require('fs');
+const path = require('path');
+
+const LOG_FILE = path.join(__dirname, '..', '..', 'data', 'logs', 'app.log');
+
 class Logger {
   constructor() {
     this.listeners = [];
+    this._ensureLogDir();
+  }
+
+  _ensureLogDir() {
+    const dir = path.dirname(LOG_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  }
+
+  _writeToFile(line) {
+    try {
+      fs.appendFileSync(LOG_FILE, line + '\n', 'utf8');
+    } catch (e) {
+      // ignore
+    }
   }
 
   _ts() {
@@ -24,8 +43,9 @@ class Logger {
   }
 
   _emit(level, msg) {
-    const line = `[${this._ts()}] ${msg}`;
-    this.listeners.forEach(fn => fn({ level, message: line, raw: msg, time: Date.now() }));
+    const line = `[${new Date().toISOString()}] [${level.toUpperCase()}] ${msg}`;
+    this._writeToFile(line);
+    this.listeners.forEach(fn => fn({ level, message: `[${this._ts()}] ${msg}`, raw: msg, time: Date.now() }));
     return line;
   }
 
@@ -58,7 +78,9 @@ class Logger {
   }
 
   divider(title) {
+    const line = `\n${'═'.repeat(20)} ${title} ${'═'.repeat(20)}\n`;
     console.log(`\n${COLORS.magenta}${'═'.repeat(20)} ${title} ${'═'.repeat(20)}${COLORS.reset}\n`);
+    this._writeToFile(line);
     this._emit('divider', title);
   }
 
