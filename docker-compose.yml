@@ -4,8 +4,8 @@ services:
     container_name: teratool
     ports:
       - "3721:3721"
-    env_file:
-      - .env
+    environment:
+      - PORT=3721
     volumes:
       - ./data:/app/data
     restart: unless-stopped

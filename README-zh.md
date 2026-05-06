@@ -1,4 +1,4 @@
-# TeraBox 网盘助手 (TeraBox Tool) v2.2.0
+# TeraBox 网盘助手 (TeraBox Tool) v2.3.0
 
 [English Documentation](./README.md)
 
@@ -16,6 +16,9 @@
 - **Web 设置面板**: 支持图形化修改 WordPress 和 TeraBox 认证配置，修改即时生效，无需重启。
 - **Cron 定时任务**: 支持标准 cron 表达式，自定义全流程定时自动执行。
 - **账号前置检查**: 所有任务执行前自动验证 TeraBox 账号有效性，异常时自动阻止并告警。
+- **凭据加密存储**: 敏感配置（密码、Cookie、Token）使用 AES-256-GCM 加密存储，磁盘数据安全。
+- **数据备份恢复**: Web 面板一键导出/导入全部配置与记录数据。
+- **日志轮转**: 按日期自动分割日志文件，保留 7 天自动清理。
 - **Docker 容器化**: 提供 Docker 镜像，一行命令即可部署运行。
 
 ## 🛠️ 技术栈
@@ -24,7 +27,7 @@
 - **前端**: Vue 3 (CDN) + Vanilla CSS (暗色主题)
 - **API**: TeraBox REST API + WordPress REST API
 - **认证**: JWT (jsonwebtoken)
-- **数据**: JSON 本地持久化存储
+- **数据**: JSON 本地持久化存储，自动备份，AES-256-GCM 凭据加密
 
 ## 🚀 快速开始
 
@@ -67,23 +70,9 @@ npm run dev
 
 ### 5. 环境变量配置
 
-在根目录创建 `.env` 文件：
+所有配置通过 Web 设置面板管理，无需 `.env` 文件。
 
-```env
-# WordPress 配置
-WP_BASE_URL=https://your-site.com
-WP_USERNAME=your_admin_user
-WP_PASSWORD=your_application_password
-WP_AUTHOR_ID=5
-
-# TeraBox 配置
-TERABOX_COOKIE=ndus=your_ndus_value; csrfToken=your_csrf; ...
-TERABOX_jsToken=your_jstoken_here
-TERABOX_bdstoken=your_bdstoken_here
-TERABOX_DEST_PATH=/acgx/
-```
-
-> **注意**: 所有环境变量均可登录后在 Web 设置面板中修改，即时生效，无需重启容器。
+> **注意**: 如果你从旧版本升级且有 `.env` 文件，其值不会自动导入，请通过 Web 面板重新填写凭据。
 
 ### 6. 命令行执行 (CLI)
 

@@ -10,6 +10,7 @@ const log = require('./lib/logger');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const RECORDS_FILE = path.join(DATA_DIR, 'records.json');
+const RECORDS_BAK = path.join(DATA_DIR, 'records.json.bak');
 
 // 状态常量
 const STATUS = {
@@ -70,6 +71,9 @@ class Records {
 
   save() {
     this._ensureDir();
+    if (fs.existsSync(RECORDS_FILE)) {
+      fs.copyFileSync(RECORDS_FILE, RECORDS_BAK);
+    }
     fs.writeFileSync(RECORDS_FILE, JSON.stringify(this.data, null, 2), 'utf8');
   }
 

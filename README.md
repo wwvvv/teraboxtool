@@ -1,4 +1,4 @@
-# TeraBox 网盘助手 (TeraBox Tool) v2.2.0
+# TeraBox 网盘助手 (TeraBox Tool) v2.3.0
 
 [中文文档](./README-zh.md)
 
@@ -16,6 +16,9 @@ An automated resource transfer and link replacement tool developed specifically 
 - **Settings Dashboard**: Web-based configuration for WordPress and TeraBox credentials, changes take effect immediately.
 - **Cron Scheduling**: Support cron expressions for fully automated pipeline execution.
 - **Account Verification**: Automatic credential validation before running any task to prevent runtime failures.
+- **Encrypted Storage**: Sensitive settings (passwords, tokens) encrypted with AES-256-GCM on disk.
+- **Backup & Restore**: One-click export/import of all settings and records via Web UI.
+- **Log Rotation**: Automatic daily log file rotation with 7-day retention.
 
 ## 🛠️ Tech Stack
 
@@ -23,7 +26,7 @@ An automated resource transfer and link replacement tool developed specifically 
 - **Frontend**: Vue 3 (CDN) + Vanilla CSS (Dark Theme)
 - **API**: TeraBox REST API + WordPress REST API
 - **Auth**: JWT (jsonwebtoken)
-- **Data**: Local JSON persistence
+- **Data**: JSON local storage, automatic backup on save, AES-256-GCM encrypted credentials
 
 ## 🚀 Quick Start
 
@@ -66,23 +69,9 @@ On first visit, you will be prompted to set a login password (minimum 4 characte
 
 ### 5. Environment Variables
 
-Create a `.env` file in the root directory:
+All configuration is managed via the Web Settings panel after first login. No `.env` file needed.
 
-```env
-# WordPress Configuration
-WP_BASE_URL=https://your-site.com
-WP_USERNAME=your_admin_user
-WP_PASSWORD=your_application_password
-WP_AUTHOR_ID=5
-
-# TeraBox Configuration
-TERABOX_COOKIE=ndus=your_ndus_value; csrfToken=your_csrf; ...
-TERABOX_jsToken=your_jstoken_here
-TERABOX_bdstoken=your_bdstoken_here
-TERABOX_DEST_PATH=/acgx/
-```
-
-> **Note**: All environment variables can also be configured via the Web Settings panel after logging in. Changes take effect immediately without restarting the container.
+> **Note**: If you have an existing `.env` file from a previous version, its values will NOT be automatically imported. Please enter your credentials through the Web UI.
 
 ### 6. CLI Commands
 

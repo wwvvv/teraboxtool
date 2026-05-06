@@ -1,6 +1,6 @@
 /**
- * logger.js - 统一日志模块
- * v1.0.0
+ * logger.js - 统一日志模块 v2.0.0
+ * 支持按日期轮转，保留7天
  */
 
 const COLORS = {
@@ -17,25 +17,46 @@ const COLORS = {
 const fs = require('fs');
 const path = require('path');
 
-const LOG_FILE = path.join(__dirname, '..', '..', 'data', 'logs', 'app.log');
+const LOG_DIR = path.join(__dirname, '..', '..', 'data', 'logs');
+const MAX_DAYS = 7;
 
 class Logger {
   constructor() {
     this.listeners = [];
+    this._currentDate = '';
     this._ensureLogDir();
+    this._cleanOldLogs();
   }
 
   _ensureLogDir() {
-    const dir = path.dirname(LOG_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+
+  _cleanOldLogs() {
+    try {
+      const files = fs.readdirSync(LOG_DIR);
+      const now = Date.now();
+      for (const f of files) {
+        const match = f.match(/^app\.(\d{4}-\d{2}-\d{2})\.log$/);
+        if (match) {
+          const fileDate = new Date(match[1]);
+          if (now - fileDate.getTime() > MAX_DAYS * 24 * 60 * 60 * 1000) {
+            fs.unlinkSync(path.join(LOG_DIR, f));
+          }
+        }
+      }
+    } catch {}
+  }
+
+  _getLogFile() {
+    const today = new Date().toISOString().slice(0, 10);
+    return path.join(LOG_DIR, `app.${today}.log`);
   }
 
   _writeToFile(line) {
     try {
-      fs.appendFileSync(LOG_FILE, line + '\n', 'utf8');
-    } catch (e) {
-      // ignore
-    }
+      fs.appendFileSync(this._getLogFile(), line + '\n', 'utf8');
+    } catch {}
   }
 
   _ts() {
@@ -50,22 +71,22 @@ class Logger {
   }
 
   info(msg) {
-    const line = this._emit('info', msg);
+    this._emit('info', msg);
     console.log(`${COLORS.cyan}[${this._ts()}]${COLORS.reset} ${msg}`);
   }
 
   success(msg) {
-    const line = this._emit('success', msg);
+    this._emit('success', msg);
     console.log(`${COLORS.green}[${this._ts()}] ✓${COLORS.reset} ${msg}`);
   }
 
   warn(msg) {
-    const line = this._emit('warn', msg);
+    this._emit('warn', msg);
     console.log(`${COLORS.yellow}[${this._ts()}] ⚠${COLORS.reset} ${msg}`);
   }
 
   error(msg) {
-    const line = this._emit('error', msg);
+    this._emit('error', msg);
     console.error(`${COLORS.red}[${this._ts()}] ✗${COLORS.reset} ${msg}`);
   }
 

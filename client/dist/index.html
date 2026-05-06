@@ -184,6 +184,7 @@
             <button class="settings-tab" :class="{active: settingsTab==='wordpress'}" @click="settingsTab='wordpress'">📝 WordPress</button>
             <button class="settings-tab" :class="{active: settingsTab==='terabox'}" @click="settingsTab='terabox'">☁️ TeraBox</button>
             <button class="settings-tab" :class="{active: settingsTab==='schedule'}" @click="settingsTab='schedule'">⏰ 定时任务</button>
+            <button class="settings-tab" :class="{active: settingsTab==='backup'}" @click="settingsTab='backup'">💾 备份恢复</button>
           </div>
 
           <!-- System Settings -->
@@ -246,6 +247,22 @@
               </div>
             </div>
             <button class="btn btn-primary" @click="saveSchedule">💾 保存定时配置</button>
+          </div>
+
+          <!-- Backup/Restore Settings -->
+          <div v-if="settingsTab==='backup'">
+            <div class="settings-group">
+              <h4>💾 数据备份与恢复</h4>
+              <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">导出包含所有配置和记录的完整备份，可用于迁移或恢复。</p>
+              <div style="display:flex;gap:12px;flex-wrap:wrap">
+                <button class="btn btn-primary" @click="exportBackup">📥 导出备份</button>
+                <label class="btn btn-secondary" style="cursor:pointer">
+                  📤 导入恢复
+                  <input type="file" accept=".json" @change="importBackup" style="display:none" />
+                </label>
+              </div>
+              <div v-if="backupMsg" class="msg" :class="backupMsgType === 'success' ? 'msg-success' : 'msg-error'" style="margin-top:16px">{{ backupMsg }}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -417,6 +434,8 @@
         const settingsMsgType = ref('success');
         const pwForm = ref({ oldPassword:'', newPassword:'' });
         const scheduleConfig = ref({ enabled: false, cron: '0 */2 * * *', lastRun: null });
+        const backupMsg = ref('');
+        const backupMsgType = ref('success');
         let pollTimer = null;
         let lastLogTime = 0;
 
@@ -530,7 +549,41 @@
           setTimeout(() => { settingsMsg.value = ''; }, 3000);
         }
 
-        const isSelected = (r) => selected.value.some(s => s.postId === r.postId && s.originalLink === r.originalLink);
+        async function exportBackup() {
+          backupMsg.value = '';
+          try {
+            const res = await api('/api/backup');
+            const data = await res.json();
+            if (res.ok) {
+              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `teratool-backup-${new Date().toISOString().slice(0,10)}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+              backupMsg.value = '备份导出成功'; backupMsgType.value = 'success';
+            } else { backupMsg.value = data.error || '导出失败'; backupMsgType.value = 'error'; }
+          } catch (e) { backupMsg.value = '导出失败: ' + e.message; backupMsgType.value = 'error'; }
+          setTimeout(() => { backupMsg.value = ''; }, 3000);
+        }
+
+        async function importBackup(event) {
+          backupMsg.value = '';
+          const file = event.target.files[0];
+          if (!file) return;
+          if (!confirm('导入将合并备份数据到当前系统，确认继续？')) { event.target.value = ''; return; }
+          try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const res = await api('/api/backup', { method: 'POST', body: JSON.stringify(data) });
+            const result = await res.json();
+            if (res.ok) { backupMsg.value = result.message; backupMsgType.value = 'success'; fetchRecords(); }
+            else { backupMsg.value = result.error || '导入失败'; backupMsgType.value = 'error'; }
+          } catch (e) { backupMsg.value = '文件格式错误: ' + e.message; backupMsgType.value = 'error'; }
+          event.target.value = '';
+          setTimeout(() => { backupMsg.value = ''; }, 5000);
+        } = (r) => selected.value.some(s => s.postId === r.postId && s.originalLink === r.originalLink);
         const toggleSelect = (r) => { const idx = selected.value.findIndex(s => s.postId===r.postId && s.originalLink===r.originalLink); if (idx>-1) selected.value.splice(idx,1); else selected.value.push({postId:r.postId,originalLink:r.originalLink}); };
         const isAllSelected = computed(() => selected.value.length > 0 && selected.value.length === pagedRecords.value.length);
         const toggleSelectAll = () => { if (isAllSelected.value) selected.value = []; else selected.value = pagedRecords.value.map(r => ({postId:r.postId,originalLink:r.originalLink})); };
@@ -595,6 +648,7 @@
           doLogin, doLogout, loadSettings, saveSettings, changePassword,
           settingsTab, settingsForm, settingsMsg, settingsMsgType, pwForm,
           scheduleConfig, loadSchedule, saveSchedule,
+          backupMsg, backupMsgType, exportBackup, importBackup,
           records, stats, logs, running, runningTask, search, filter,
           page, totalPages, pagedRecords, filteredRecords, logBody,
           runTask, stopTask, exportCsv, fetchRecords,

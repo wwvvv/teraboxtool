@@ -4,12 +4,16 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const log = require('./logger');
-require('dotenv').config();
 
-const BASE_URL = (process.env.WP_BASE_URL || '').replace(/\/$/, '');
-const AUTH = { username: process.env.WP_USERNAME, password: process.env.WP_PASSWORD };
-const COOKIE = process.env.WP_COOKIE || '';
-const AUTHOR_ID = process.env.WP_AUTHOR_ID || 5;
+function _getConfig() {
+  return {
+    baseUrl: (process.env.WP_BASE_URL || '').replace(/\/$/, ''),
+    auth: { username: process.env.WP_USERNAME, password: process.env.WP_PASSWORD },
+    cookie: process.env.WP_COOKIE || '',
+    authorId: parseInt(process.env.WP_AUTHOR_ID) || 5,
+  };
+}
+
 const TERABOX_REGEX = /https?:\/\/(www\.)?(terabox(app|)?\.com|1024tera\.com|terashare\.net|1024terabox\.com)\/(s\/|chinese\/sharing\/link\?surl=)[a-zA-Z0-9_-]+/g;
 
 function escapeRegExp(str) {
@@ -104,14 +108,14 @@ function deepContains(value, needle) {
 }
 
 class WpApi {
-  async fetchAllPosts(authorId = AUTHOR_ID) {
+  async fetchAllPosts(authorId = _getConfig().authorId) {
     let allPosts = [], page = 1;
     while (true) {
       log.info(`[WP] 获取文章 第${page}页...`);
       try {
-        const resp = await axios.get(`${BASE_URL}/wp-json/wp/v2/posts`, {
+        const resp = await axios.get(`${_getConfig().baseUrl}/wp-json/wp/v2/posts`, {
           params: { per_page: 100, page, author: authorId, _fields: 'id,title,link,content', orderby: 'id', order: 'asc' },
-          auth: AUTH, timeout: 30000,
+          auth: _getConfig().auth, timeout: 30000,
         });
         const posts = resp.data;
         if (!posts || posts.length === 0) break;
@@ -131,7 +135,7 @@ class WpApi {
 
   async getNonce(postUrl) {
     try {
-      const resp = await axios.get(postUrl, { headers: { 'Cookie': COOKIE }, timeout: 15000 });
+      const resp = await axios.get(postUrl, { headers: { 'Cookie': _getConfig().cookie }, timeout: 15000 });
       const $ = cheerio.load(resp.data);
       const scripts = $('script').map((i, el) => $(el).html()).get().join('\n');
       const match = scripts.match(/\"nonce\":\"([^\"]+)\"/);
@@ -146,8 +150,8 @@ class WpApi {
       params.append('post_id', postId);
       params.append('nonce', nonce);
       params.append('link_index', '0');
-      const resp = await axios.post(`${BASE_URL}/wp-admin/admin-ajax.php`, params, {
-        headers: { 'Referer': postUrl, 'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': COOKIE },
+      const resp = await axios.post(`${_getConfig().baseUrl}/wp-admin/admin-ajax.php`, params, {
+        headers: { 'Referer': postUrl, 'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': _getConfig().cookie },
         timeout: 15000,
       });
       const data = resp.data.data || {};
@@ -195,9 +199,9 @@ class WpApi {
   }
 
   async fetchEditablePost(postId) {
-    const resp = await axios.get(`${BASE_URL}/wp-json/wp/v2/posts/${postId}`, {
+    const resp = await axios.get(`${_getConfig().baseUrl}/wp-json/wp/v2/posts/${postId}`, {
       params: { context: 'edit', _fields: 'id,link,content,meta' },
-      auth: AUTH,
+      auth: _getConfig().auth,
       timeout: 15000,
     });
     return resp.data;
@@ -230,7 +234,7 @@ class WpApi {
 
   async xmlRpcCall(methodName, paramsXml) {
     const body = `<?xml version="1.0"?><methodCall><methodName>${methodName}</methodName><params>${paramsXml}</params></methodCall>`;
-    const resp = await axios.post(`${BASE_URL}/xmlrpc.php`, body, {
+    const resp = await axios.post(`${_getConfig().baseUrl}/xmlrpc.php`, body, {
       headers: { 'Content-Type': 'text/xml' },
       timeout: 20000,
     });
@@ -244,8 +248,8 @@ class WpApi {
   xmlRpcAuthParams() {
     return [
       '<param><value><int>0</int></value></param>',
-      `<param><value><string>${xmlEscape(AUTH.username || '')}</string></value></param>`,
-      `<param><value><string>${xmlEscape(AUTH.password || '')}</string></value></param>`,
+      `<param><value><string>${xmlEscape(_getConfig().auth.username || '')}</string></value></param>`,
+      `<param><value><string>${xmlEscape(_getConfig().auth.password || '')}</string></value></param>`,
     ].join('');
   }
 
