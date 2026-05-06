@@ -1,5 +1,5 @@
 /**
- * terabox-api.js - TeraBox API 封装 v2.0.0
+ * terabox-api.js - TeraBox API 封装 v2.1.1
  *
  * 接口分类：
  * - 公开接口（share/list）：不需要 jsToken/bdstoken/Cookie，不带认证反而更稳定
@@ -9,10 +9,7 @@ const axios = require('axios');
 const log = require('./logger');
 require('dotenv').config();
 
-const COOKIE_STR = process.env.TERABOX_COOKIE || process.env.TERABOX_NDUS || '';
-const JSTOKEN = process.env.TERABOX_jsToken || '';
-const BDSTOKEN = process.env.TERABOX_bdstoken || '';
-const DEST_PATH = process.env.TERABOX_DEST_PATH || '/acgx/';
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 function extractNdus(raw) {
   const m = raw.match(/ndus=([^;]+)/);
@@ -24,23 +21,29 @@ function extractCsrf(raw) {
   return m ? m[1] : '';
 }
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-
 class TeraBoxApi {
   constructor() {
-    this.ndus = extractNdus(COOKIE_STR);
-    this.csrf = extractCsrf(COOKIE_STR);
+    this.appId = '250528';
+    this.refreshConfig();
+  }
+
+  refreshConfig() {
+    const cookieStr = process.env.TERABOX_COOKIE || process.env.TERABOX_NDUS || '';
+    this.jsToken = process.env.TERABOX_jsToken || '';
+    this.bdstoken = process.env.TERABOX_bdstoken || '';
+    this.destPath = process.env.TERABOX_DEST_PATH || '/acgx/';
+    this.ndus = extractNdus(cookieStr);
+    this.csrf = extractCsrf(cookieStr);
     this.headers = {
-      'Cookie': COOKIE_STR + '; PANWEB=1',
+      'Cookie': cookieStr + '; PANWEB=1',
       'User-Agent': UA,
       'Accept': 'application/json, text/plain, */*',
       'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8',
     };
-    this.appId = '250528';
   }
 
   getBaseQuery() {
-    return `app_id=${this.appId}&web=1&channel=dubox&clienttype=0&jsToken=${encodeURIComponent(JSTOKEN)}&bdstoken=${encodeURIComponent(BDSTOKEN)}`;
+    return `app_id=${this.appId}&web=1&channel=dubox&clienttype=0&jsToken=${encodeURIComponent(this.jsToken)}&bdstoken=${encodeURIComponent(this.bdstoken)}`;
   }
 
   extractSurl(shareUrl) {
@@ -152,7 +155,7 @@ class TeraBoxApi {
       const url = `https://${td}/share/transfer?${this.getBaseQuery()}&shareid=${shareid}&from=${uk}&ondup=newcopy`;
       const params = new URLSearchParams();
       params.append('fsidlist', JSON.stringify(fsIds));
-      params.append('path', DEST_PATH);
+      params.append('path', this.destPath);
 
       try {
         const resp = await axios.post(url, params, {
@@ -172,7 +175,7 @@ class TeraBoxApi {
             success: true,
             errno: resp.data.errno,
             transferred: info.map(f => ({ from: f.from, to: f.to, fs_id: f.fs_id })),
-            destPath: DEST_PATH,
+            destPath: this.destPath,
           };
         }
 
@@ -195,7 +198,8 @@ class TeraBoxApi {
   /**
    * 列出网盘目录文件
    */
-  async listDir(dirPath = DEST_PATH) {
+  async listDir(dirPath) {
+    if (!dirPath) dirPath = this.destPath;
     const domains = ['www.terabox.com', 'www.1024terabox.com', 'www.terabox.app'];
     let lastErr = null;
 
@@ -268,9 +272,53 @@ class TeraBoxApi {
     }
   }
 
-  async findFile(filename, dirPath = DEST_PATH) {
+  async findFile(filename, dirPath) {
+    if (!dirPath) dirPath = this.destPath;
     const files = await this.listDir(dirPath);
     return files.find(f => f.filename === filename) || null;
+  }
+
+  async checkAccount() {
+    this.refreshConfig();
+    const cookie = process.env.TERABOX_COOKIE || process.env.TERABOX_NDUS || '';
+    const jsToken = process.env.TERABOX_jsToken || '';
+    const bdstoken = process.env.TERABOX_bdstoken || '';
+
+    if (!cookie) return { ok: false, error: '缺少 TeraBox Cookie' };
+    if (!jsToken) return { ok: false, error: '缺少 jsToken' };
+    if (!bdstoken) return { ok: false, error: '缺少 bdstoken' };
+
+    const domains = ['www.terabox.com', 'www.1024terabox.com', 'www.terabox.app'];
+    for (const domain of domains) {
+      try {
+        const url = `https://${domain}/api/list?${this.getBaseQuery()}&dir=${encodeURIComponent(this.destPath)}&order=time&desc=1&page=1&num=1`;
+        const resp = await axios.get(url, {
+          headers: { ...this.headers, 'Referer': `https://${domain}/` },
+          timeout: 10000,
+        });
+
+        if (resp.data.errno === 0) {
+          const fileCount = (resp.data.list || []).length;
+          return { ok: true, message: `账号正常 (目录下 ${fileCount} 个文件)` };
+        }
+
+        if (resp.data.errno === -6) {
+          return { ok: false, error: '账号未登录 (Cookie 可能已过期)' };
+        }
+        if (resp.data.errno === 400810) {
+          return { ok: false, error: '账号认证失败 (Cookie/jsToken/bdstoken 可能已过期)' };
+        }
+        if (resp.data.errno === 2 || resp.data.errno === -9) {
+          return { ok: true, message: '账号正常 (目标目录不存在)' };
+        }
+
+        log.warn(`[API] checkAccount ${domain} errno=${resp.data.errno}`);
+      } catch (e) {
+        log.warn(`[API] checkAccount ${domain} 请求失败: ${e.message}`);
+      }
+    }
+
+    return { ok: false, error: '账号检查失败：无法连接 TeraBox' };
   }
 }
 

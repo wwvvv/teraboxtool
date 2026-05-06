@@ -1,8 +1,8 @@
-# TeraBox Link Replacer Tool (TeraBox Tool) v1.3.0
+# TeraBox 网盘助手 (TeraBox Tool) v2.2.0
 
 [中文文档](./README-zh.md)
 
-An automated resource transfer and link replacement tool developed specifically for WordPress sites using TeraBox (formerly BaiduNetdisk Overseas). It aims to eliminate the tedious manual process of migrating large volumes of cloud storage links.
+An automated resource transfer and link replacement tool developed specifically for WordPress sites using TeraBox (formerly BaiduNetdisk Overseas). It eliminates the tedious manual process of migrating large volumes of cloud storage links.
 
 ## 🌟 Key Features
 
@@ -10,65 +10,93 @@ An automated resource transfer and link replacement tool developed specifically 
 - **High-Efficiency Transfer**: Leverages the TeraBox HTTP API to batch transfer shared resources to your own cloud storage directory in seconds.
 - **One-Click Sharing**: Automatically generates new public share links for transferred files, with support for custom extraction codes.
 - **Back-Write Replacement**: Automatically writes the newly generated share links back to the corresponding WordPress posts, achieving silent link updates.
-- **Workflow Automation**: Supports one-click serial execution of the full pipeline: `crawl -> transfer -> share -> replace`.
+- **Workflow Automation**: Supports one-click serial execution of the full pipeline: `crawl → sync_filename → transfer → share → replace`.
 - **Modern UI Panel**: Built-in management dashboard developed with Vue 3, featuring real-time status monitoring, log viewing, manual editing, and batch task management.
+- **Login Authentication**: JWT-based authentication system with first-access password setup.
+- **Settings Dashboard**: Web-based configuration for WordPress and TeraBox credentials, changes take effect immediately.
+- **Cron Scheduling**: Support cron expressions for fully automated pipeline execution.
+- **Account Verification**: Automatic credential validation before running any task to prevent runtime failures.
 
 ## 🛠️ Tech Stack
 
-- **Backend**: Node.js + Express
-- **Frontend**: Vue 3 (CDN) + Vanilla CSS (Aesthetic Dark Theme)
+- **Backend**: Node.js + Express + node-cron
+- **Frontend**: Vue 3 (CDN) + Vanilla CSS (Dark Theme)
 - **API**: TeraBox REST API + WordPress REST API
+- **Auth**: JWT (jsonwebtoken)
 - **Data**: Local JSON persistence
 
 ## 🚀 Quick Start
 
 ### 1. Prerequisites
-Ensure [Node.js](https://nodejs.org/) is installed (v16+ recommended).
 
-### 2. Install Dependencies
+Ensure [Node.js](https://nodejs.org/) is installed (v16+ recommended), or use Docker.
+
+### 2. Option A — Docker Deployment (Recommended)
+
 ```bash
-npm install
+# Clone the repository
+git clone https://github.com/wwvvv/teraboxtool.git
+cd teraboxtool
+
+# Configure your .env file (cp .env.example .env, then edit it)
+# Start the service
+docker compose up -d
 ```
 
-### 3. Configure Environment Variables
-Create a `.env` file in the root directory and fill in the following information:
+Visit `http://localhost:3721` to access the management panel.
+
+### 3. Option B — Manual Setup
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Create .env file
+cp .env.example .env
+
+# 3. Start the server
+npm run dev
+```
+
+Visit `http://localhost:3721` to access the management panel.
+
+### 4. First-Time Setup
+
+On first visit, you will be prompted to set a login password (minimum 4 characters). Use this password for all subsequent logins.
+
+### 5. Environment Variables
+
+Create a `.env` file in the root directory:
 
 ```env
 # WordPress Configuration
 WP_BASE_URL=https://your-site.com
 WP_USERNAME=your_admin_user
 WP_PASSWORD=your_application_password
-WP_AUTHOR_ID=5  # Author ID for crawling posts
+WP_AUTHOR_ID=5
 
 # TeraBox Configuration
-TERABOX_NDUS=ndus=your_cookie_here; ...
+TERABOX_COOKIE=ndus=your_ndus_value; csrfToken=your_csrf; ...
 TERABOX_jsToken=your_jstoken_here
 TERABOX_bdstoken=your_bdstoken_here
-TERABOX_DEST_PATH=/acgx/  # Destination path for transfers
+TERABOX_DEST_PATH=/acgx/
 ```
 
-### 4. Running the Tool
+> **Note**: All environment variables can also be configured via the Web Settings panel after logging in. Changes take effect immediately without restarting the container.
 
-#### A. Web Management Panel (Recommended)
-```bash
-npm run dev
-```
-Visit `http://localhost:3721` to access the graphical interface for task operations.
+### 6. CLI Commands
 
-#### B. Command Line Interface (CLI)
 - **Full Workflow**: `node src/main.js run`
 - **Crawl Only**: `node src/main.js crawl`
+- **Sync File Names**: `node src/main.js sync_filename`
 - **Transfer Only**: `node src/main.js transfer`
 - **Share Only**: `node src/main.js share`
 - **Replace Only**: `node src/main.js replace`
 - **Import Legacy Data**: `node src/main.js import`
 
-## 📅 Change Log (v1.3.0)
+## 📦 Change Log
 
-- **Force Stop**: Added a "🛑 Stop Task" button to interrupt ongoing tasks at any time.
-- **Manual Edit**: Supports manual modification of links, passwords, and statuses via the UI.
-- **Selection Support**: Choose specific records for targeted batch operations.
-- **Status Tracking**: Multi-state tracking (Pending, Crawled, Transferred, Shared, Replaced, Failed).
+See [CHANGELOG.md](./CHANGELOG.md) for full release history.
 
 ## 📝 License
 
