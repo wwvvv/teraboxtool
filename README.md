@@ -1,4 +1,4 @@
-# TeraBox 网盘助手 (TeraBox Tool) v2.3.0
+# TeraBox 网盘助手 (TeraBox Tool) v2.4.0
 
 [中文文档](./README-zh.md)
 
@@ -12,20 +12,21 @@ An automated resource transfer and link replacement tool developed specifically 
 - **Back-Write Replacement**: Automatically writes the newly generated share links back to the corresponding WordPress posts, achieving silent link updates.
 - **Workflow Automation**: Supports one-click serial execution of the full pipeline: `crawl → sync_filename → transfer → share → replace`.
 - **Modern UI Panel**: Built-in management dashboard developed with Vue 3, featuring real-time status monitoring, log viewing, manual editing, and batch task management.
-- **Login Authentication**: JWT-based authentication system with first-access password setup.
+- **Login Authentication**: JWT-based authentication system with bcryptjs password hashing.
 - **Settings Dashboard**: Web-based configuration for WordPress and TeraBox credentials, changes take effect immediately.
 - **Cron Scheduling**: Support cron expressions for fully automated pipeline execution.
 - **Account Verification**: Automatic credential validation before running any task to prevent runtime failures.
 - **Encrypted Storage**: Sensitive settings (passwords, tokens) encrypted with AES-256-GCM on disk.
 - **Backup & Restore**: One-click export/import of all settings and records via Web UI.
 - **Log Rotation**: Automatic daily log file rotation with 7-day retention.
+- **Security Hardening**: Non-root Docker execution, restricted CORS, JWT secret persistence, SRI-protected frontend assets.
 
 ## 🛠️ Tech Stack
 
 - **Backend**: Node.js + Express + node-cron
-- **Frontend**: Vue 3 (CDN) + Vanilla CSS (Dark Theme)
+- **Frontend**: Vue 3.5 (CDN, SRI locked) + Vanilla CSS (Dark Theme)
 - **API**: TeraBox REST API + WordPress REST API
-- **Auth**: JWT (jsonwebtoken)
+- **Auth**: JWT (jsonwebtoken) + bcryptjs
 - **Data**: JSON local storage, automatic backup on save, AES-256-GCM encrypted credentials
 
 ## 🚀 Quick Start
@@ -37,12 +38,8 @@ Ensure [Node.js](https://nodejs.org/) is installed (v16+ recommended), or use Do
 ### 2. Option A — Docker Deployment (Recommended)
 
 ```bash
-# Clone the repository
 git clone https://github.com/wwvvv/teraboxtool.git
 cd teraboxtool
-
-# Configure your .env file (cp .env.example .env, then edit it)
-# Start the service
 docker compose up -d
 ```
 
@@ -51,13 +48,7 @@ Visit `http://localhost:3721` to access the management panel.
 ### 3. Option B — Manual Setup
 
 ```bash
-# 1. Install dependencies
 npm install
-
-# 2. Create .env file
-cp .env.example .env
-
-# 3. Start the server
 npm run dev
 ```
 
@@ -67,13 +58,7 @@ Visit `http://localhost:3721` to access the management panel.
 
 On first visit, you will be prompted to set a login password (minimum 4 characters). Use this password for all subsequent logins.
 
-### 5. Environment Variables
-
-All configuration is managed via the Web Settings panel after first login. No `.env` file needed.
-
-> **Note**: If you have an existing `.env` file from a previous version, its values will NOT be automatically imported. Please enter your credentials through the Web UI.
-
-### 6. CLI Commands
+### 5. CLI Commands
 
 - **Full Workflow**: `node src/main.js run`
 - **Crawl Only**: `node src/main.js crawl`
@@ -83,9 +68,16 @@ All configuration is managed via the Web Settings panel after first login. No `.
 - **Replace Only**: `node src/main.js replace`
 - **Import Legacy Data**: `node src/main.js import`
 
-## 📦 Change Log
+## 🔒 Security
 
-See [CHANGELOG.md](./CHANGELOG.md) for full release history.
+- Passwords hashed with bcryptjs (legacy SHA-256 hashes auto-migrated on verify)
+- JWT secrets persisted across restarts (no forced re-login)
+- Sensitive credentials encrypted at rest with AES-256-GCM
+- API responses mask secret fields (wpPassword, teraboxCookie, etc.)
+- CORS restricted to same-origin
+- Docker container runs as non-root user
+- Port bound to 127.0.0.1 by default in docker-compose
+- Frontend assets loaded with SRI integrity verification
 
 ## 📝 License
 
