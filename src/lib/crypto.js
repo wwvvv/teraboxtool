@@ -14,7 +14,7 @@ function getOrGenerateKey() {
     return fs.readFileSync(KEY_FILE, 'utf8').trim();
   }
   const key = crypto.randomBytes(KEY_LENGTH).toString('base64');
-  fs.writeFileSync(KEY_FILE, key, 'utf8');
+  fs.writeFileSync(KEY_FILE, key, { mode: 0o600 });
   return key;
 }
 
@@ -71,4 +71,4 @@ function encryptSettings(settings) {
   return result;
 }
 
-module.exports = { encrypt, decrypt, encryptSettings, decryptSettings, ENCRYPTED_KEYS, getOrGenerateKey };
+module.exports = { encrypt, decrypt, encryptSettings, decryptSettings, ENCRYPTED_KEYS };

@@ -6,7 +6,7 @@
   <title>TeraBox 网盘助手</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/vue@3.5.13/dist/vue.global.prod.js" integrity="sha384-W/1Fp/LgAYO/oTn9Gs+PbeWuMuq1eQCnUMPCeg8POmMYchhzxctjEqtbiCIxDOON" crossorigin="anonymous"></script>
   <style>
     :root {
       --bg-primary: #0a0e1a;
@@ -491,6 +491,7 @@
         }
 
         function doLogout() {
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
           localStorage.removeItem('token');
           token.value = '';
           view.value = 'login';
@@ -583,7 +584,9 @@
           } catch (e) { backupMsg.value = '文件格式错误: ' + e.message; backupMsgType.value = 'error'; }
           event.target.value = '';
           setTimeout(() => { backupMsg.value = ''; }, 5000);
-        } = (r) => selected.value.some(s => s.postId === r.postId && s.originalLink === r.originalLink);
+        }
+
+        const isSelected = (r) => selected.value.some(s => s.postId === r.postId && s.originalLink === r.originalLink);
         const toggleSelect = (r) => { const idx = selected.value.findIndex(s => s.postId===r.postId && s.originalLink===r.originalLink); if (idx>-1) selected.value.splice(idx,1); else selected.value.push({postId:r.postId,originalLink:r.originalLink}); };
         const isAllSelected = computed(() => selected.value.length > 0 && selected.value.length === pagedRecords.value.length);
         const toggleSelectAll = () => { if (isAllSelected.value) selected.value = []; else selected.value = pagedRecords.value.map(r => ({postId:r.postId,originalLink:r.originalLink})); };
@@ -607,7 +610,9 @@
             const json = await res.json();
             if (json.logs && json.logs.length > 0) { logs.value.push(...json.logs); lastLogTime = json.logs[json.logs.length-1].time; nextTick(() => { if(logBody.value) logBody.value.scrollTop = logBody.value.scrollHeight; }); }
             running.value = json.running;
-            if (!json.running && pollTimer) { clearInterval(pollTimer); pollTimer = null; fetchRecords(); }
+            if (json.running) {
+              if (!pollTimer) pollTimer = setInterval(() => { fetchLogs(); fetchRecords(); }, 2000);
+            } else if (pollTimer) { clearInterval(pollTimer); pollTimer = null; fetchRecords(); }
           } catch {}
         }
         async function runTask(task, useSelection = false) {

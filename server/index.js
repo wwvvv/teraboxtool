@@ -15,12 +15,37 @@ const teraboxApi = require('../src/lib/terabox-api');
 
 const app = express();
 const PORT = process.env.PORT || 3721;
+const BIND_HOST = process.env.BIND_HOST || '0.0.0.0';
+
+const SECRET_KEYS = ['wpPassword', 'teraboxCookie', 'teraboxJsToken', 'teraboxBdstoken'];
+
+function maskSecret(obj) {
+  const o = { ...obj };
+  for (const k of SECRET_KEYS) {
+    if (o[k] && typeof o[k] === 'string' && o[k].length > 4) {
+      o[k] = o[k].slice(0, 2) + '****' + o[k].slice(-2);
+    } else if (o[k]) {
+      o[k] = '****';
+    }
+  }
+  if (o.loginPassword) o.loginPassword = undefined;
+  if (o._jwtSecret) o._jwtSecret = undefined;
+  return o;
+}
+
+let taskLock = Promise.resolve();
+function withTaskLock(fn) {
+  const prev = taskLock;
+  let release;
+  taskLock = new Promise(r => { release = r; });
+  return prev.then(() => fn()).finally(release);
+}
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const SETTINGS_VERSION = 2;
 
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 const SETTINGS_KEYS = [
@@ -134,7 +159,7 @@ app.get('/api/settings', authMiddleware, (req, res) => {
   const settings = loadSettings();
   const result = {};
   for (const s of SETTINGS_KEYS) {
-    if (s.type === 'password') {
+    if (s.type === 'password' || s.secret) {
       result[s.key] = '';
     } else {
       result[s.key] = settings[s.key] || '';
@@ -216,31 +241,34 @@ app.post('/api/run/:task', authMiddleware, async (req, res) => {
   state.reset();
   res.json({ message: `任务 ${taskName} 已启动` });
 
-  try {
-    if (taskName === 'run') {
-      const crawl = require('../src/crawl');
-      const syncFilename = require('../src/sync_filename');
-      const transfer = require('../src/transfer');
-      const share = require('../src/share');
-      const replace = require('../src/replace');
-      await crawl();
-      await syncFilename();
-      await transfer(targetList);
-      await share(targetList);
-      await replace(targetList);
-    } else {
-      const taskFn = require(`../src/${taskName}`);
-      await taskFn(targetList);
+  const taskPromise = withTaskLock(async () => {
+    try {
+      if (taskName === 'run') {
+        const crawl = require('../src/crawl');
+        const syncFilename = require('../src/sync_filename');
+        const transfer = require('../src/transfer');
+        const share = require('../src/share');
+        const replace = require('../src/replace');
+        await crawl();
+        await syncFilename();
+        await transfer(targetList);
+        await share(targetList);
+        await replace(targetList);
+      } else {
+        const taskFn = require(`../src/${taskName}`);
+        await taskFn(targetList);
+      }
+    } catch (err) {
+      if (err.message === 'TASK_STOPPED') {
+        log.warn('任务已被用户强行终止');
+      } else {
+        log.error(`任务执行失败: ${err.message}`);
+      }
+    } finally {
+      runningTask = null;
     }
-  } catch (err) {
-    if (err.message === 'TASK_STOPPED') {
-      log.warn('任务已被用户强行终止');
-    } else {
-      log.error(`任务执行失败: ${err.message}`);
-    }
-  } finally {
-    runningTask = null;
-  }
+  });
+  taskPromise.catch(() => {});
 });
 
 app.post('/api/records/update', authMiddleware, (req, res) => {
@@ -320,7 +348,7 @@ app.get('/api/backup', authMiddleware, (req, res) => {
   res.json({
     version: SETTINGS_VERSION,
     exportedAt: new Date().toISOString(),
-    settings,
+    settings: maskSecret(settings),
     records: records.data,
   });
 });
@@ -388,30 +416,32 @@ async function runScheduledTask() {
   runningTask = '定时全流程';
   taskLogs = [];
   state.reset();
-  try {
-    const crawl = require('../src/crawl');
-    const syncFilename = require('../src/sync_filename');
-    const transfer = require('../src/transfer');
-    const share = require('../src/share');
-    const replace = require('../src/replace');
-    await crawl();
-    await syncFilename();
-    await transfer();
-    await share();
-    await replace();
-    log.info('[调度器] 定时全流程任务执行完成');
-  } catch (err) {
-    if (err.message === 'TASK_STOPPED') {
-      log.warn('[调度器] 定时全流程任务被终止');
-    } else {
-      log.error(`[调度器] 定时全流程任务执行失败: ${err.message}`);
+  await withTaskLock(async () => {
+    try {
+      const crawl = require('../src/crawl');
+      const syncFilename = require('../src/sync_filename');
+      const transfer = require('../src/transfer');
+      const share = require('../src/share');
+      const replace = require('../src/replace');
+      await crawl();
+      await syncFilename();
+      await transfer();
+      await share();
+      await replace();
+      log.info('[调度器] 定时全流程任务执行完成');
+    } catch (err) {
+      if (err.message === 'TASK_STOPPED') {
+        log.warn('[调度器] 定时全流程任务被终止');
+      } else {
+        log.error(`[调度器] 定时全流程任务执行失败: ${err.message}`);
+      }
+    } finally {
+      runningTask = null;
+      const schedule = loadScheduleConfig();
+      schedule.lastRun = startedAt;
+      saveScheduleConfig(schedule);
     }
-  } finally {
-    runningTask = null;
-    const schedule = loadScheduleConfig();
-    schedule.lastRun = startedAt;
-    saveScheduleConfig(schedule);
-  }
+  });
 }
 
 function startCronScheduler() {
@@ -449,7 +479,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`\n🚀 TeraBox 网盘助手运行在 http://localhost:${PORT}\n`);
+app.listen(PORT, BIND_HOST, () => {
+  console.log(`\n🚀 TeraBox 网盘助手运行在 http://${BIND_HOST}:${PORT}\n`);
   startCronScheduler();
 });

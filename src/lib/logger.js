@@ -60,7 +60,7 @@ class Logger {
   }
 
   _ts() {
-    return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    return new Date().toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' });
   }
 
   _emit(level, msg) {
@@ -99,7 +99,7 @@ class Logger {
   }
 
   divider(title) {
-    const line = `\n${'═'.repeat(20)} ${title} ${'═'.repeat(20)}\n`;
+    const line = `\n${'═'.repeat(20)} ${title} ${'═'.repeat(20)}`;
     console.log(`\n${COLORS.magenta}${'═'.repeat(20)} ${title} ${'═'.repeat(20)}${COLORS.reset}\n`);
     this._writeToFile(line);
     this._emit('divider', title);
